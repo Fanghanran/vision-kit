@@ -141,3 +141,4 @@ cprofile_*
 
 # ─── 知识库文档源文件（用户导入的 SOP/规章制度，体积不可控） ───
 data/knowledge/
+__init__.py
