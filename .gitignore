@@ -1,0 +1,143 @@
+# ============================================================
+# Vision Agent .gitignore
+# 安全规则：含密码/密钥的配置、运行数据、日志 不推送到 GitHub
+# ============================================================
+
+# ─── 敏感配置（含密码、API Key、摄像头凭据） ───
+configs/settings.yaml
+configs/cameras/*
+!configs/cameras/*.example
+configs/botsort.yaml
+configs/bytetrack.yaml
+.env
+.env.*
+!.env.example
+!configs/settings.yaml.example
+!configs/cameras/*.example
+
+# ─── 运行数据（截图、视频、数据库、向量库） ───
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ─── 向量数据库（RAG） ───
+chroma_db/
+vector_db/
+*.chroma
+
+# ─── Redis ───
+dump.rdb
+*.rdb
+
+# ─── 日志 ───
+logs/
+*.log
+*.log.*
+
+# ─── 模型文件（体积大，不放 Git） ───
+models/*.pt
+models/*.onnx
+models/*.engine
+models/*.pth
+models/*.tflite
+models/*.bin
+models/*.rknn
+models/*.xml
+
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.so
+
+# ─── Node.js（前端构建） ───
+node_modules/
+.nuxt/
+.next/
+.npm
+.eslintcache
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# ─── 前端构建产物（由 vite/webpack 生成，不需要版本管理） ───
+vision_agent/web/static/assets/
+*.map
+
+# ─── IDE ───
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+# ─── AI 工具 ───
+.claude/
+.trae/
+.tws/
+
+# ─── 编辑器和备份文件 ───
+*.bak
+*.tmp
+*.orig
+*~
+
+# ─── 架构图（临时生成，正式图放 docs/） ───
+vision_agent_architecture*.png
+vision_agent_architecture*.jpg
+vision_agent_architecture*.svg
+
+# ─── 系统文件 ───
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+Icon?
+.Spotlight-V100
+.Trashes
+._*
+
+# ─── Windows ───
+*.lnk
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# ─── Docker（如后期使用） ───
+docker-compose.override.yml
+
+# ─── FFmpeg 临时文件 ───
+*.ts
+*.m3u8
+*.part
+
+# ─── 性能测试结果 ───
+benchmarks/
+*.prof
+*.pstats
+cprofile_*
+
+# ─── 知识库文档源文件（用户导入的 SOP/规章制度，体积不可控） ───
+data/knowledge/

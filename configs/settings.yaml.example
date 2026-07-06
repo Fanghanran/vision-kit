@@ -1,0 +1,86 @@
+# Vision Agent 全局配置模板
+# 复制为 settings.yaml 后填写真实值
+# cp settings.yaml.example settings.yaml
+
+version: 1
+
+system:
+  name: "Vision Agent"
+  log_level: INFO
+  log_file: logs/vision_agent.log
+  log_max_size: 50MB
+  log_backup_count: 5
+  data_dir: data
+  cleanup_interval: 3600
+  snapshot_retention_days: 30
+  clip_retention_days: 7
+
+gpu:
+  device: 0
+  batch_size: 8
+  fp16: true
+  tensorrt: false
+
+detector:
+  model: models/yolov11m.pt
+  confidence: 0.5
+  iou_threshold: 0.45
+  classes: null
+  input_size: 640
+
+tracker:
+  type: botsort
+  config: configs/botsort.yaml
+
+rules:
+  dir: configs/rules
+  watch: true
+
+llm:
+  enabled: true
+  provider: openai
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key: ${LLM_API_KEY}
+  model: qwen-plus
+  max_tokens: 1000
+  timeout: 30
+  max_retries: 2
+  monthly_budget_usd: 50
+
+rag:
+  enabled: false
+  vector_store: chromadb
+  persist_dir: data/vector_db
+  top_k: 5
+  knowledge_dir: data/knowledge
+
+notification:
+  webhook:
+    enabled: true
+    url: ${WEBHOOK_URL}
+    timeout: 10
+  email:
+    enabled: false
+    smtp_host: smtp.example.com
+    smtp_port: 465
+    username: ${EMAIL_USER}
+    password: ${EMAIL_PASS}
+    to: ["admin@example.com"]
+
+storage:
+  type: sqlite
+  path: data/vision_agent.db
+
+redis:
+  enabled: false
+  host: localhost
+  port: 6379
+  db: 0
+
+web:
+  enabled: true
+  host: 0.0.0.0
+  port: 8080
+  api_token: ${API_TOKEN}
+  cors_origins:
+    - "http://localhost:3000"

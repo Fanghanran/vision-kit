@@ -1,0 +1,27 @@
+# 摄像头配置模板
+# 复制为 camera_01.yaml 后填写真实值
+# cp camera_01.yaml.example cam_01.yaml
+
+camera:
+  id: cam_01
+  name: "仓库A入口"
+  stream_url: rtsp://admin:password@192.168.1.100:554/stream1
+  fps: 5
+  width: 1920
+  height: 1080
+  reconnect_interval: 3
+  max_reconnect_attempts: 100
+
+detection:
+  confidence: 0.6
+  classes: ["person", "car"]
+
+rules:
+  - intrusion
+  - crowd
+
+recording:
+  enabled: true
+  buffer_seconds: 30
+  format: mp4
+  codec: h264
