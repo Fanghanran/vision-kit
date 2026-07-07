@@ -124,19 +124,13 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 
-# ─── 异常 ────────────────────────────────────────────────────
+# ─── 异常（统一定义在 core/exceptions.py）────────────────────
 
-
-class ConfigError(Exception):
-    """配置校验失败"""
-
-
-class ConfigLoadError(ConfigError):
-    """配置文件加载失败"""
-
-
-class ConfigValidationError(ConfigError):
-    """配置校验不通过"""
+from vision_agent.core.exceptions import (  # noqa: E402, F401
+    ConfigError,  # exported for downstream use
+    ConfigLoadError,
+    ConfigValidationError,
+)
 
 
 # ─── 辅助函数 ────────────────────────────────────────────────

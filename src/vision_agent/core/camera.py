@@ -22,6 +22,7 @@ from queue import Empty, Full, Queue
 
 import numpy as np
 
+from vision_agent.core.exceptions import CameraStreamError
 from vision_agent.core.types import CameraState, CameraStatus
 
 logger = logging.getLogger(__name__)
@@ -324,10 +325,11 @@ class CameraThread:
             if len(buffer) < frame_size:
                 # 记录 FFmpeg 退出码
                 returncode = self._ffmpeg_process.returncode
-                raise IOError(
+                raise CameraStreamError(
                     f"stream_ended camera={self._config.camera_id} "
                     f"expected={frame_size} got={len(buffer)} "
-                    f"ffmpeg_exit_code={returncode}"
+                    f"ffmpeg_exit_code={returncode}",
+                    context={"camera_id": self._config.camera_id, "returncode": returncode},
                 )
 
             # 解码为 numpy 数组（失败跳过该帧，不断开连接）

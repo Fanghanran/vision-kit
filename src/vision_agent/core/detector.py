@@ -20,6 +20,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
+from vision_agent.core.exceptions import ModelLoadError
 from vision_agent.core.types import BoundingBox, Detection
 
 logger = logging.getLogger(__name__)
@@ -216,7 +217,7 @@ class YOLODetector:
         """加载 YOLO 模型（detector.md 3.1 节）"""
         model_path = Path(self._config.model_path)
         if not model_path.exists():
-            raise FileNotFoundError(f"模型文件不存在: {model_path}")
+            raise ModelLoadError(f"模型文件不存在: {model_path}", context={"model_path": str(model_path)})
 
         from ultralytics import YOLO
 

@@ -45,15 +45,9 @@ from vision_agent.core.types import (
 logger = logging.getLogger(__name__)
 
 
-# ─── 异常 ────────────────────────────────────────────────────
+# ─── 异常（统一定义在 core/exceptions.py）────────────────────
 
-
-class StartupError(Exception):
-    """系统启动失败"""
-
-
-class ConfigError(Exception):
-    """配置校验失败"""
+from vision_agent.core.exceptions import ConfigError, StartupError  # noqa: E402, F401
 
 
 # ─── 未实现模块的 Protocol 桩 ────────────────────────────────
