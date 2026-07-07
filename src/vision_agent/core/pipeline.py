@@ -35,6 +35,7 @@ from vision_agent.core.detector import DetectorProtocol
 from vision_agent.core.recorder import ClipRecorder, RecorderConfig
 from vision_agent.core.tracker import TrackerConfig, TrackerManager
 from vision_agent.core.types import (
+    Alert,
     CameraState,
     CameraStatus,
     Detection,
@@ -86,7 +87,10 @@ class LLMAnalyzerProtocol(Protocol):
 class NotifierProtocol(Protocol):
     """通知器接口（actions/notifier.py 实现）"""
 
-    def execute(self, event: Event, snapshot_path: str) -> bool: ...
+    def execute(self, alert: Alert, snapshot_path: str = "") -> bool: ...
+
+    @property
+    def name(self) -> str: ...
 
 
 @runtime_checkable
@@ -541,10 +545,11 @@ class ActionThread:
                     "llm_analyze_error event=%s error=%s", event.event_id, str(e)
                 )
 
-        # 通知
+        # 通知（构造 Alert 对象传递给 notifier）
+        alert = Alert(event=event)
         for notifier in self._notifiers:
             try:
-                notifier.execute(event, snapshot_path)
+                notifier.execute(alert, snapshot_path)
             except Exception as e:
                 logger.error("notify_error event=%s error=%s", event.event_id, str(e))
 
