@@ -20,7 +20,7 @@
 | README | README.md | ✅ |
 | 进度文件 | docs/PROGRESS.md（本文件） | ✅ |
 
-## 代码状态：6/15 模块完成
+## 代码状态：7/15 模块完成
 
 | 模块 | 文件 | 行数 | 测试 | Review | 状态 |
 |------|------|------|------|--------|------|
@@ -30,8 +30,8 @@
 | core/tracker.py | src/vision_agent/core/tracker.py | 457 | 26✅ | ✅ | 完成 |
 | core/recorder.py | src/vision_agent/core/recorder.py | 338 | 26✅ | ✅ | 完成 |
 | core/pipeline.py | src/vision_agent/core/pipeline.py | 1089 | 90✅ | ✅ | 完成 |
-| config/settings.py | — | — | — | — | **下一个** |
-| rules/engine.py | — | — | — | — | 待开发 |
+| config/settings.py | src/vision_agent/config/settings.py | 833 | 74✅ | ✅ | 完成 |
+| rules/engine.py | — | — | — | — | **下一个** |
 | rules/builtin/*.py | — | — | — | — | 待开发 |
 | storage/database.py | — | — | — | — | 待开发 |
 | storage/cache.py | — | — | — | — | 待开发 |
@@ -41,14 +41,14 @@
 | web/api/*.py | — | — | — | — | 待开发 |
 | __main__.py | — | — | — | — | 待开发 |
 
-**总计**：代码 3109 行，测试 251 个，全部通过。
+**总计**：代码 3942 行，测试 325 个，全部通过。
 
 ## 下一步开发顺序
 
 ```
-core/pipeline.py      ← ✅ 完成（1089行，90测试，依赖 camera+detector+tracker+recorder）
-config/settings.py    ← 现在开始（无依赖）
-rules/engine.py       ← 依赖 types
+core/pipeline.py      ← ✅ 完成（1089行，90测试）
+config/settings.py    ← ✅ 完成（833行，74测试）
+rules/engine.py       ← 现在开始（依赖 types）
 rules/builtin/*.py    ← 依赖 engine
 storage/database.py   ← 依赖 types
 storage/cache.py      ← 无依赖
@@ -83,8 +83,8 @@ __main__.py           ← 依赖全部
 ```
 继续 Vision Agent 项目开发。项目在 d:/vision_agent/。
 读 docs/PROGRESS.md 了解当前进度。
-当前完成 6/15 模块（core/types, camera, detector, tracker, recorder, pipeline）。
-下一个模块是 config/settings.py。
+当前完成 7/15 模块（core/types, camera, detector, tracker, recorder, pipeline, config/settings）。
+下一个模块是 rules/engine.py。
 每个模块的工作流：写代码 → Review agent → Test agent → 修代码 → commit。
 ```
 
