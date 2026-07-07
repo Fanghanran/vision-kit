@@ -263,7 +263,24 @@ def create_app(
         alert = database.get_alert(alert_id)
         if not alert:
             raise HTTPException(status_code=404, detail="Alert not found")
-        return alert.to_dict()
+        # 扁平化响应，与列表端点一致
+        event = alert.event
+        return {
+            "alert_id": alert.alert_id,
+            "event_type": event.event_type,
+            "camera_id": event.camera_id,
+            "camera_name": event.camera_name,
+            "severity": event.severity.value,
+            "status": alert.status.value,
+            "risk_level": alert.llm_analysis.risk_level if alert.llm_analysis else None,
+            "created_at": alert.created_at,
+            "llm_analysis": alert.llm_analysis.to_dict() if alert.llm_analysis else None,
+            "snapshot_path": event.snapshot_path,
+            "video_clip_path": alert.video_clip_path,
+            "notified_channels": alert.notified_channels,
+            "acknowledged_at": alert.acknowledged_at,
+            "acknowledged_by": alert.acknowledged_by,
+        }
 
     # ─── 告警截图 ────────────────────────────────────────────
 
@@ -351,11 +368,19 @@ def create_app(
         )
 
         updated = database.get_alert(alert_id)
-        return (
-            updated.to_dict()
-            if updated
-            else {"alert_id": alert_id, "status": new_status}
-        )
+        if not updated:
+            return {"alert_id": alert_id, "status": new_status}
+        ev = updated.event
+        return {
+            "alert_id": updated.alert_id,
+            "event_type": ev.event_type,
+            "camera_id": ev.camera_id,
+            "camera_name": ev.camera_name,
+            "severity": ev.severity.value,
+            "status": updated.status.value,
+            "risk_level": updated.llm_analysis.risk_level if updated.llm_analysis else None,
+            "created_at": updated.created_at,
+        }
 
     # ─── 统计 ────────────────────────────────────────────────
 

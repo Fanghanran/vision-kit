@@ -1,0 +1,51 @@
+// Vision Agent 主题变量
+
+:root {
+  --va-bg-primary: #F5F7FA;
+  --va-bg-card: #FFFFFF;
+  --va-text-primary: #303133;
+  --va-text-secondary: #909399;
+  --va-border: #DCDFE6;
+  --va-sidebar: #001529;
+  --va-primary: #1890FF;
+  --va-success: #67C23A;
+  --va-warning: #E6A23C;
+  --va-danger: #F56C6C;
+  --va-info: #909399;
+}
+
+[data-theme="dark"] {
+  --va-bg-primary: #141414;
+  --va-bg-card: #1F1F1F;
+  --va-text-primary: #E0E0E0;
+  --va-text-secondary: #8C8C8C;
+  --va-border: #434343;
+  --va-primary: #177DDC;
+  --va-success: #49AA19;
+  --va-warning: #D89614;
+  --va-danger: #D32029;
+  --va-info: #8C8C8C;
+}
+
+// 告警状态颜色
+$pending-color: #E6A23C;
+$acknowledged-color: #1890FF;
+$rejected-color: #909399;
+$resolved-color: #67C23A;
+
+// 风险等级颜色
+$risk-critical: #D32029;
+$risk-high: #D89614;
+$risk-medium: #1890FF;
+$risk-low: #8C8C8C;
+
+// 新告警闪烁动画
+@keyframes alert-flash {
+  0%   { background: rgba(24, 144, 255, 0.2); }
+  50%  { background: transparent; }
+  100% { background: rgba(24, 144, 255, 0.2); }
+}
+
+.alert-new-row {
+  animation: alert-flash 1s ease-in-out 3;
+}

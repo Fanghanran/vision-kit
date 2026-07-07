@@ -649,7 +649,7 @@ class TestGetAlert:
         assert resp.status_code == 200
         data = resp.json()
         assert data["alert_id"] == "alert-001"
-        assert "event" in data
+        assert "event_type" in data
         assert "status" in data
 
     def test_nonexistent_alert_returns_404(self):
