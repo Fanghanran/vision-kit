@@ -1,7 +1,7 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="app-container" :class="{ 'dark-mode': isDark }">
-      <AppHeader @toggle-dark="toggleDark" />
+      <AppHeader @toggle-dark="toggleDark" @show-token="showTokenDialog = true" />
       <div class="app-body">
         <AppSidebar />
         <main class="app-main">

@@ -299,11 +299,21 @@ def assemble_components(config: dict) -> tuple:
         result_queue_size=config.get("pipeline", {}).get("result_queue_size", 100),
     )
 
+    from vision_agent.core.recorder import RecorderConfig
+
+    rec_cfg = config.get("recording", {})
+    recorder_config = RecorderConfig(
+        enabled=rec_cfg.get("enabled", True),
+        buffer_duration=rec_cfg.get("buffer_duration", 30.0),
+        output_dir=rec_cfg.get("output_dir", "data/clips"),
+        snapshot_dir=rec_cfg.get("snapshot_dir", "data/snapshots"),
+    )
+
     pipeline = VisionAgent(
         camera_configs=camera_configs,
         detector=detector,
         tracker_config=tracker_config,
-        recorder_config=config.get("recording", {}),
+        recorder_config=recorder_config,
         pipeline_config=pipeline_config,
         rule_engine=rule_engine,
         llm_analyzer=llm_analyzer,

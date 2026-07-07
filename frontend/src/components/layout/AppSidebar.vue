@@ -1,5 +1,5 @@
 <template>
-  <aside class="app-sidebar">
+  <aside class="app-sidebar" :class="{ collapsed: isCollapsed }">
     <el-menu
       :default-active="route.path"
       router
@@ -7,6 +7,7 @@
       text-color="#ffffffa6"
       active-text-color="#1890ff"
       :collapse="isCollapsed"
+      :collapse-transition="false"
     >
       <el-menu-item index="/">
         <el-icon><DataBoard /></el-icon>
@@ -25,26 +26,58 @@
         <template #title>系统</template>
       </el-menu-item>
     </el-menu>
+
+    <!-- 折叠按钮 -->
+    <div class="collapse-btn" @click="isCollapsed = !isCollapsed">
+      <el-icon>
+        <Fold v-if="!isCollapsed" />
+        <Expand v-else />
+      </el-icon>
+    </div>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { DataBoard, Bell, VideoCamera, Monitor } from '@element-plus/icons-vue'
+import { DataBoard, Bell, VideoCamera, Monitor, Fold, Expand } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const isCollapsed = ref(false)
+
+// 响应式自动折叠
+onMounted(() => {
+  const mq = window.matchMedia('(max-width: 1199px)')
+  isCollapsed.value = mq.matches
+  mq.addEventListener('change', (e) => { isCollapsed.value = e.matches })
+})
 </script>
 
 <style lang="scss" scoped>
 .app-sidebar {
+  display: flex;
+  flex-direction: column;
   width: 200px;
   min-height: calc(100vh - 56px - 32px);
   background: var(--va-sidebar);
+  transition: width 0.3s;
+
+  &.collapsed { width: 64px; }
 
   .el-menu {
     border-right: none;
+    flex: 1;
   }
+}
+
+.collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  color: #ffffffa6;
+  cursor: pointer;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  &:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
 }
 </style>

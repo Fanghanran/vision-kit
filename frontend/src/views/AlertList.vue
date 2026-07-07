@@ -33,7 +33,7 @@
       </el-form>
 
       <!-- 告警表格 -->
-      <el-table :data="alerts" v-loading="loading" stripe @row-click="goDetail" style="cursor: pointer">
+      <el-table :data="alerts" v-loading="loading" stripe @row-click="goDetail" style="cursor: pointer" :row-class-name="rowClassName">
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">
@@ -115,6 +115,14 @@ function goDetail(row: any) {
   router.push(`/alerts/${row.alert_id}`)
 }
 
+function rowClassName({ row }: { row: any }) {
+  // 新告警（最近 30 秒内）添加闪烁动画
+  if (row.created_at && Date.now() / 1000 - row.created_at < 30) {
+    return 'alert-new-row'
+  }
+  return ''
+}
+
 function statusTagType(s: string) {
   return { pending: 'warning', acknowledged: '', rejected: 'info', resolved: 'success' }[s] || 'info'
 }
@@ -145,5 +153,14 @@ function formatTime(ts: number) {
 }
 .filter-form {
   margin-bottom: 16px;
+}
+
+:deep(.alert-new-row) {
+  animation: alert-flash 1s ease-in-out 3;
+}
+
+@keyframes alert-flash {
+  0%, 100% { background: rgba(24, 144, 255, 0.12) !important; }
+  50% { background: transparent !important; }
 }
 </style>
