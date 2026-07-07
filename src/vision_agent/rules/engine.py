@@ -107,6 +107,9 @@ class MemoryCache:
         self._store[key] = current + 1
         return self._store[key]
 
+    def delete(self, key: str) -> None:
+        self._store.pop(key, None)
+
     def clear(self) -> None:
         self._store.clear()
 

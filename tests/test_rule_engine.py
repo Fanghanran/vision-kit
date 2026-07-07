@@ -53,6 +53,7 @@ def _event(**kwargs) -> Event:
 def _write_yaml(path: Path, data: dict) -> Path:
     with open(path, "w", encoding="utf-8") as f:
         yaml.dump(data, f, allow_unicode=True)
+        f.flush()
     return path
 
 
