@@ -71,7 +71,12 @@ class RuleEngineProtocol(Protocol):
 class LLMAnalyzerProtocol(Protocol):
     """LLM 分析器接口（llm/analyzer.py 实现）"""
 
-    def analyze(self, event: Event, snapshot_path: str) -> Any: ...
+    def analyze(
+        self,
+        event: Event,
+        snapshot: np.ndarray | None = None,
+        rag_context: str | None = None,
+    ) -> Any: ...
 
     @property
     def success_rate(self) -> float: ...
@@ -529,7 +534,7 @@ class ActionThread:
         if self._llm_analyzer:
             self._llm_calls += 1
             try:
-                self._llm_analyzer.analyze(event, snapshot_path)
+                self._llm_analyzer.analyze(event)
                 self._llm_successes += 1
             except Exception as e:
                 logger.error(
