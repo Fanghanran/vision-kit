@@ -106,31 +106,25 @@ let barChart: echarts.ECharts | null = null
 const trendPeriod = ref('7d')
 const realtimeAlerts = computed(() => alertsStore.realtimeAlerts)
 const newAlertIds = ref(new Set<string>())
-let newAlertTimer: ReturnType<typeof setTimeout>
 
-// 数字滚动动画
-function animateNumber(from: number, to: number, duration = 800): string {
-  if (from === to) return String(to)
-  const start = performance.now()
-  const update = (now: number) => {
-    const progress = Math.min((now - start) / duration, 1)
-    const eased = 1 - Math.pow(1 - progress, 3) // easeOutCubic
-    return Math.round(from + (to - from) * eased)
+// 新告警自动加入闪烁集合，3 秒后移除
+watch(realtimeAlerts, (newVal, oldVal) => {
+  const added = newVal.filter((a: any) => !oldVal?.some((o: any) => o.alert_id === a.alert_id))
+  for (const alert of added) {
+    newAlertIds.value.add(alert.alert_id)
+    setTimeout(() => newAlertIds.value.delete(alert.alert_id), 3000)
   }
-  return String(to) // 简化：直接返回目标值，实际可用 requestAnimationFrame
-}
+})
 
 // 统计卡片
 const statCards = computed(() => {
   const h = systemStore.health
-  const s = systemStore.stats
   return [
     {
       label: '今日告警',
       value: h?.today_alerts ?? 0,
       displayValue: String(h?.today_alerts ?? '-'),
       color: 'var(--va-danger)',
-      trend: s?.alerts_by_status ? Math.round(Math.random() * 20 - 10) : undefined,
       onClick: () => router.push('/alerts'),
     },
     {
@@ -175,17 +169,18 @@ onMounted(async () => {
 onUnmounted(() => {
   clearInterval(refreshTimer)
   clearTimeout(newAlertTimer)
+  window.removeEventListener('resize', handleResize)
   trendChart?.dispose()
   pieChart?.dispose()
   barChart?.dispose()
 })
 
-// 监听窗口大小变化
-window.addEventListener('resize', () => {
+function handleResize() {
   trendChart?.resize()
   pieChart?.resize()
   barChart?.resize()
-})
+}
+window.addEventListener('resize', handleResize)
 
 function initCharts() {
   initTrendChart()
@@ -201,7 +196,7 @@ function initTrendChart() {
 
 function updateTrendChart() {
   if (!trendChart) return
-  const stats = systemStore.stats
+  const stats = systemStore.getStats(trendPeriod.value)
   // 从 stats 构造趋势数据（后端返回的 groups 按天聚合）
   const groups = stats?.groups || []
   const dates = groups.map((g: any) => g.group_key)
@@ -238,7 +233,7 @@ function initPieChart() {
   if (!pieChartRef.value) return
   pieChart = echarts.init(pieChartRef.value)
 
-  const stats = systemStore.stats
+  const stats = systemStore.getStats('today')
   const byType = stats?.alerts_by_type || {}
   const data = Object.entries(byType).map(([name, value]) => ({
     name: eventTypeLabel(name),
@@ -269,7 +264,7 @@ function initBarChart() {
   if (!barChartRef.value) return
   barChart = echarts.init(barChartRef.value)
 
-  const stats = systemStore.stats
+  const stats = systemStore.getStats('today')
   const byCamera = stats?.alerts_by_camera || {}
   const sorted = Object.entries(byCamera).sort((a, b) => (b[1] as number) - (a[1] as number))
   const cameras = sorted.map(([id]) => id)
