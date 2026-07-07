@@ -78,14 +78,14 @@ class TestMemoryCache:
 
     def test_incr_from_zero(self):
         cache = MemoryCache()
-        assert cache.incr("counter") == 1
-        assert cache.incr("counter") == 2
-        assert cache.incr("counter") == 3
+        assert cache.increment("counter") == 1
+        assert cache.increment("counter") == 2
+        assert cache.increment("counter") == 3
 
     def test_incr_with_existing_value(self):
         cache = MemoryCache()
         cache.set("counter", 10)
-        assert cache.incr("counter") == 11
+        assert cache.increment("counter") == 11
 
     def test_clear(self):
         cache = MemoryCache()

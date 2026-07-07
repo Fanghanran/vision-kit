@@ -66,52 +66,12 @@ class RuleProtocol(Protocol):
         ...
 
 
-# ─── 缓存协议 ────────────────────────────────────────────────
+# ─── 缓存（统一从 storage/cache.py 导入）──────────────────────
 
-
-@runtime_checkable
-class CacheProtocol(Protocol):
-    """缓存接口（rule_engine.md 2.3 节）
-
-    用于三层防线的状态存储。
-    storage/cache.py 实现后可替换为 Redis 等。
-    """
-
-    def get(self, key: str) -> Any | None: ...
-
-    def set(self, key: str, value: Any, ttl: int = 0) -> None: ...
-
-    def incr(self, key: str) -> int: ...
-
+from vision_agent.storage.cache import CacheProtocol, MemoryCache  # noqa: E402
 
 # ─── 内存缓存 ────────────────────────────────────────────────
 
-
-class MemoryCache:
-    """简单的内存缓存实现
-
-    当 storage/cache.py 实现后可替换为 Redis 缓存。
-    """
-
-    def __init__(self) -> None:
-        self._store: dict[str, Any] = {}
-
-    def get(self, key: str) -> Any | None:
-        return self._store.get(key)
-
-    def set(self, key: str, value: Any, ttl: int = 0) -> None:
-        self._store[key] = value
-
-    def incr(self, key: str) -> int:
-        current = self._store.get(key, 0)
-        self._store[key] = current + 1
-        return self._store[key]
-
-    def delete(self, key: str) -> None:
-        self._store.pop(key, None)
-
-    def clear(self) -> None:
-        self._store.clear()
 
 
 # ─── 三层防线 ────────────────────────────────────────────────
@@ -190,13 +150,8 @@ class DefenseFilter:
 
     def reset_rule(self, rule_name: str) -> None:
         """重置指定规则的所有防线状态"""
-        keys_to_remove = (
-            [k for k in self._cache._store if rule_name in k]
-            if isinstance(self._cache, MemoryCache)
-            else []
-        )
-        for key in keys_to_remove:
-            del self._cache._store[key]
+        if hasattr(self._cache, "clear_by_substring"):
+            self._cache.clear_by_substring(rule_name)
 
     def _sliding_window_check(self, key: str, window_size: int) -> bool:
         """第一层：滑动窗口去重（rule_engine.md 3.3 节）
@@ -204,7 +159,7 @@ class DefenseFilter:
         连续触发帧数达到窗口大小才放行。
         未触发时重置计数器。
         """
-        count = self._cache.incr(key)
+        count = self._cache.increment(key)
         if count >= window_size:
             # 达到阈值，放行并重置
             self._cache.set(key, 0)
