@@ -79,11 +79,13 @@ def sanitize_config(config: dict[str, Any]) -> dict[str, Any]:
 # ─── Token 认证 ──────────────────────────────────────────────
 
 
-def verify_token(token: str, api_token: str) -> bool:
+def verify_token(token: str | None, api_token: str) -> bool:
     """常量时间 Token 比较（web_api.md 3.3 节）"""
     if not api_token:
         return True  # 未配置 Token 时跳过认证（开发模式）
-    return hmac.compare_digest(token, api_token)
+    if not token:
+        return False
+    return hmac.compare_digest(str(token), api_token)
 
 
 # ─── FastAPI 应用工厂 ────────────────────────────────────────
@@ -131,7 +133,6 @@ def create_app(
     _module.Request = Request  # type: ignore[attr-defined]
 
     config = config or {}
-    api_token = config.get("api_token", "")
     cors_origins = config.get("cors_origins", ["http://localhost:3000"])
 
     app = FastAPI(
@@ -146,18 +147,6 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # ─── 认证依赖 ────────────────────────────────────────────
-
-    async def require_auth(request: Request) -> str:
-        """Bearer Token 认证"""
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Invalid or missing token")
-        token = auth[7:]
-        if not verify_token(token, api_token):
-            raise HTTPException(status_code=403, detail="Invalid token")
-        return token
 
     # ─── 路径白名单中间件 ────────────────────────────────────
 
@@ -199,7 +188,7 @@ def create_app(
     # ─── 摄像头状态 ──────────────────────────────────────────
 
     @app.get("/api/cameras")
-    async def list_cameras(token: str = Depends(require_auth)) -> Any:
+    async def list_cameras() -> Any:
         if not pipeline:
             return []
         states = pipeline.get_camera_states()
@@ -217,7 +206,6 @@ def create_app(
         severity: str | None = None,
         start_time: float | None = None,
         end_time: float | None = None,
-        token: str = Depends(require_auth),
     ) -> Any:
         if not database:
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
@@ -257,7 +245,7 @@ def create_app(
     # ─── 告警详情 ────────────────────────────────────────────
 
     @app.get("/api/alerts/{alert_id}")
-    async def get_alert(alert_id: str, token: str = Depends(require_auth)) -> Any:
+    async def get_alert(alert_id: str) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="Alert not found")
         alert = database.get_alert(alert_id)
@@ -285,7 +273,7 @@ def create_app(
     # ─── 告警截图 ────────────────────────────────────────────
 
     @app.get("/api/alerts/{alert_id}/snapshot")
-    async def get_snapshot(alert_id: str, token: str = Depends(require_auth)) -> Any:
+    async def get_snapshot(alert_id: str) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="Alert not found")
         alert = database.get_alert(alert_id)
@@ -300,7 +288,7 @@ def create_app(
 
     @app.get("/api/alerts/{alert_id}/clip")
     async def get_clip(
-        alert_id: str, download: bool = False, token: str = Depends(require_auth)
+        alert_id: str, download: bool = False
     ) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="Alert not found")
@@ -324,7 +312,6 @@ def create_app(
     async def update_alert_status(
         alert_id: str,
         body: dict[str, Any] = Body(...),
-        token: str = Depends(require_auth),
     ) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="Alert not found")
@@ -387,7 +374,6 @@ def create_app(
     @app.get("/api/stats")
     async def get_stats(
         period: str = "today",
-        token: str = Depends(require_auth),
     ) -> Any:
         if not database:
             return {"period": period, "total_alerts": 0}
@@ -417,7 +403,7 @@ def create_app(
     # ─── 配置查看 ────────────────────────────────────────────
 
     @app.get("/api/config")
-    async def get_config(token: str = Depends(require_auth)) -> Any:
+    async def get_config() -> Any:
         return sanitize_config(config)
 
     # ─── WebSocket ────────────────────────────────────────────
@@ -451,11 +437,7 @@ def create_app(
     ws_manager = WSManager()
 
     @app.websocket("/ws")
-    async def websocket_endpoint(ws: WebSocket, token: str = "") -> None:
-        if api_token and not verify_token(token, api_token):
-            await ws.close(code=4003)
-            return
-
+    async def websocket_endpoint(ws: WebSocket) -> None:
         await ws_manager.connect(ws)
         try:
             while True:

@@ -392,66 +392,6 @@ class TestPathWhitelist:
 # ─── Token Authentication ────────────────────────────────────
 
 
-class TestTokenAuth:
-    def test_valid_token_grants_access(self):
-        app = _create_app()
-        client = TestClient(app)
-        resp = client.get("/api/cameras", headers=_auth_headers())
-        assert resp.status_code == 200
-
-    def test_missing_auth_header_returns_401(self):
-        app = _create_app()
-        client = TestClient(app)
-        resp = client.get("/api/cameras")
-        assert resp.status_code == 401
-        assert "Invalid or missing token" in resp.json()["detail"]
-
-    def test_malformed_auth_header_returns_401(self):
-        app = _create_app()
-        client = TestClient(app)
-        resp = client.get("/api/cameras", headers={"Authorization": "Basic abc"})
-        assert resp.status_code == 401
-
-    def test_wrong_token_returns_403(self):
-        app = _create_app()
-        client = TestClient(app)
-        resp = client.get("/api/cameras", headers=_auth_headers("wrong-token"))
-        assert resp.status_code == 403
-        assert "Invalid token" in resp.json()["detail"]
-
-    def test_empty_api_token_skips_token_validation(self):
-        """When config has empty api_token, token content is not validated (any Bearer value works)."""
-        app = _create_app(config={"api_token": "", "cors_origins": ["*"]})
-        client = TestClient(app)
-        # Bearer header is still required for format, but token content is not validated
-        resp = client.get("/api/cameras", headers=_auth_headers("any-value"))
-        assert resp.status_code == 200
-
-    def test_no_api_token_key_skips_token_validation(self):
-        """When config dict has no 'api_token' key at all, any Bearer value works."""
-        app = _create_app(config={"cors_origins": ["*"]})
-        client = TestClient(app)
-        resp = client.get("/api/cameras", headers=_auth_headers("any-value"))
-        assert resp.status_code == 200
-
-    def test_empty_api_token_still_requires_bearer_format(self):
-        """Even with empty api_token, the Bearer format is still required."""
-        app = _create_app(config={"api_token": "", "cors_origins": ["*"]})
-        client = TestClient(app)
-        resp = client.get("/api/cameras")
-        assert resp.status_code == 401
-
-    def test_health_no_auth_required(self):
-        """/health endpoint must not require authentication."""
-        app = _create_app(config={"api_token": VALID_TOKEN})
-        client = TestClient(app)
-        resp = client.get("/health")
-        assert resp.status_code == 200
-
-
-# ─── GET /health ──────────────────────────────────────────────
-
-
 class TestHealthEndpoint:
     def test_ok_status(self):
         pl = _mock_pipeline("ok")
@@ -891,44 +831,6 @@ class TestGetConfig:
 
 
 # ─── Integration: Auth required on all /api/* endpoints ──────
-
-
-class TestAuthIntegration:
-    """Verify that all authenticated endpoints properly enforce auth."""
-
-    @pytest.mark.parametrize(
-        "method, path",
-        [
-            ("GET", "/api/cameras"),
-            ("GET", "/api/alerts"),
-            ("GET", "/api/alerts/some-id"),
-            ("GET", "/api/stats"),
-            ("GET", "/api/config"),
-        ],
-    )
-    def test_endpoints_require_auth(self, method: str, path: str):
-        app = _create_app()
-        client = TestClient(app)
-        resp = client.request(method, path)
-        assert resp.status_code == 401
-
-    @pytest.mark.parametrize(
-        "method, path",
-        [
-            ("GET", "/api/cameras"),
-            ("GET", "/api/alerts"),
-            ("GET", "/api/stats"),
-            ("GET", "/api/config"),
-        ],
-    )
-    def test_endpoints_accept_valid_token(self, method: str, path: str):
-        app = _create_app()
-        client = TestClient(app)
-        resp = client.request(method, path, headers=_auth_headers())
-        assert resp.status_code == 200
-
-
-# ─── App State ────────────────────────────────────────────────
 
 
 class TestAppState:

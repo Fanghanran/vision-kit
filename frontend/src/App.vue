@@ -1,7 +1,7 @@
 <template>
   <el-config-provider :locale="zhCn">
     <div class="app-container" :class="{ 'dark-mode': isDark }">
-      <AppHeader @toggle-dark="toggleDark" @show-token="showTokenDialog = true" />
+      <AppHeader @toggle-dark="toggleDark" />
       <div class="app-body">
         <AppSidebar />
         <main class="app-main">
@@ -9,49 +9,28 @@
         </main>
       </div>
       <AppFooter />
-      <TokenDialog v-model:visible="showTokenDialog" />
     </div>
   </el-config-provider>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, onMounted } from 'vue'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import { useAuthStore } from '@/stores/auth'
 import { useWebSocket } from '@/composables/useWebSocket'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppFooter from '@/components/layout/AppFooter.vue'
-import TokenDialog from '@/components/common/TokenDialog.vue'
 
-const authStore = useAuthStore()
-const { connect, disconnect } = useWebSocket()
+const { connect } = useWebSocket()
 
 const isDark = ref(false)
-const showTokenDialog = ref(false)
 
-// 首次访问且无 Token 时弹出输入框
 onMounted(() => {
-  if (!authStore.token) {
-    showTokenDialog.value = true
-  }
+  connect()
   // 读取暗色模式偏好
   isDark.value = localStorage.getItem('va-theme') === 'dark'
   document.documentElement.setAttribute('data-theme', isDark.value ? 'dark' : '')
 })
-
-// Token 变更时重连 WebSocket
-watch(
-  () => authStore.token,
-  (newToken) => {
-    if (newToken) {
-      connect()
-    } else {
-      disconnect()
-    }
-  },
-  { immediate: true }
-)
 
 function toggleDark() {
   isDark.value = !isDark.value

@@ -16,47 +16,21 @@
       </el-tag>
     </div>
     <div class="header-right">
-      <!-- WebSocket 连接状态 -->
-      <el-tooltip :content="wsStatusText">
-        <span class="ws-indicator" :class="wsStatus">
-          <span class="ws-dot"></span>
-          {{ wsStatusText }}
-        </span>
-      </el-tooltip>
-
       <el-tooltip content="切换暗色模式">
         <el-button :icon="isDark ? Sunny : Moon" circle @click="$emit('toggle-dark')" />
       </el-tooltip>
-
-      <el-dropdown v-if="authStore.isAuthenticated" trigger="click">
-        <el-tag :type="authStore.isAuthenticated ? 'success' : 'danger'" size="small" style="cursor: pointer">
-          {{ authStore.isAuthenticated ? '已认证' : '未认证' }}
-        </el-tag>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item @click="handleLogout">退出登录</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-      <el-button v-else size="small" type="primary" @click="$emit('show-token')">
-        登录
-      </el-button>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { VideoCamera, Moon, Sunny } from '@element-plus/icons-vue'
-import { useAuthStore } from '@/stores/auth'
 import { useSystemStore } from '@/stores/system'
-import { useWebSocket } from '@/composables/useWebSocket'
 
-const emit = defineEmits<{ 'toggle-dark': []; 'show-token': [] }>()
+defineEmits<{ 'toggle-dark': [] }>()
 
-const authStore = useAuthStore()
 const systemStore = useSystemStore()
-const { wsStatus } = useWebSocket()
 
 const isDark = computed(() => document.documentElement.getAttribute('data-theme') === 'dark')
 const health = computed(() => systemStore.health)
@@ -69,19 +43,8 @@ const statusTagType = computed(() => {
 })
 
 const wsStatusText = computed(() => {
-  return { connected: '已连接', disconnected: '未连接', reconnecting: '重连中...' }[wsStatus.value] || '未知'
+  return { connected: '已连接', disconnected: '未连接' }[wsStatus.value] || '未知'
 })
-
-// 监听认证失败事件
-function onAuthFailed() {
-  emit('show-token')
-}
-onMounted(() => window.addEventListener('va-auth-failed', onAuthFailed))
-onUnmounted(() => window.removeEventListener('va-auth-failed', onAuthFailed))
-
-function handleLogout() {
-  authStore.clearToken()
-}
 
 function formatUptime(seconds: number) {
   const h = Math.floor(seconds / 3600)
@@ -135,11 +98,5 @@ function formatUptime(seconds: number) {
   border-radius: 50%;
   &.connected { background: #67C23A; }
   &.disconnected { background: #F56C6C; }
-  &.reconnecting { background: #E6A23C; animation: pulse 1s infinite; }
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
 }
 </style>

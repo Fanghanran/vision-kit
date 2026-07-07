@@ -15,12 +15,16 @@
 |------|------|------|
 | 架构设计 | docs/architecture.md (1200+行，17章) | ✅ |
 | 模块设计书×15 | docs/modules/ (按模块分类) | ✅ |
+| 前端设计书 | docs/frontend/DESIGN.md | ✅ |
+| 异常体系设计 | docs/modules/core/exceptions.md | ✅ |
 | 端-云演进 | architecture.md 第16章 | ✅ |
 | 安全设计 | architecture.md 第12章 | ✅ |
 | README | README.md | ✅ |
 | 进度文件 | docs/PROGRESS.md（本文件） | ✅ |
 
-## 代码状态：✅ 15/15 模块全部完成
+## 代码状态：✅ 15/15 后端模块 + 前端全部完成
+
+### 后端模块
 
 | 模块 | 文件 | 行数 | 测试 | Review | 状态 |
 |------|------|------|------|--------|------|
@@ -39,18 +43,36 @@
 | llm/analyzer.py | src/vision_agent/llm/analyzer.py | 466 | 80✅ | ✅ | 完成 |
 | llm/provider.py | src/vision_agent/llm/provider.py | 587 | 56✅ | ✅ | 完成 |
 | actions/notifier.py | src/vision_agent/actions/notifier.py | 470 | 78✅ | ✅ | 完成 |
-| web/api/*.py | src/vision_agent/web/api/app.py | 450 | 93✅ | ✅ | 完成 |
+| web/api/app.py | src/vision_agent/web/api/app.py | 450 | 76✅ | ✅ | 完成 |
 | __main__.py | src/vision_agent/__main__.py | 436 | — | ✅ | 完成 |
 
-**总计**：代码 9285 行，测试 943 个，全部通过。
+**后端总计**：代码 9437 行，测试 926 个，全部通过。
+
+### 前端（Vue 3）
+
+| 类别 | 文件数 | 状态 |
+|------|--------|------|
+| 页面（5个） | Dashboard/AlertList/AlertDetail/Cameras/System | ✅ |
+| 组件（4个） | AppHeader/AppSidebar/AppFooter/TokenDialog | ✅ |
+| 状态管理（4个） | auth/alerts/cameras/system stores | ✅ |
+| API 层（5个） | client/alerts/cameras/system/types | ✅ |
+| WebSocket | useWebSocket composable | ✅ |
+| 样式 | variables.scss（暗色模式支持） | ✅ |
+
+**前端总计**：24 个文件，覆盖设计书 100% 功能。
+
+## 已知问题
+
+- WebSocket 实时推送端点存在 403 问题（uvicorn WebSocket 升级兼容性）
+- 摄像头配置文件需 UTF-8 编码（Windows 默认 GBK 会导致加载失败，已修复）
+- 无用户认证系统（当前无 token 验证）
 
 ## 下一步
 
-全部模块已完成。后续可选工作：
-- 前端 Vue 3 开发
-- 配置文件模板（settings.yaml.example）
+- 用户角色系统（登录/权限）
 - Docker 部署配置
 - 性能测试与优化
+- WebSocket 端点兼容性修复
 storage/database.py   ← 依赖 types
 storage/cache.py      ← 无依赖
 llm/analyzer.py       ← 依赖 types

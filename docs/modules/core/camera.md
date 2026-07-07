@@ -36,15 +36,17 @@
 |------|------|--------|------|
 | `camera_id` | `str` | 必填 | 摄像头唯一 ID |
 | `camera_name` | `str` | 必填 | 摄像头显示名称 |
-| `rtsp_url` | `str` | 必填 | RTSP 流地址 |
+| `rtsp_url` | `str` | `""` | RTSP 流地址（source_type=rtsp 时必填） |
+| `source_type` | `str` | `"rtsp"` | 数据源类型：`rtsp` / `video` / `test` |
+| `video_path` | `str` | `""` | 本地视频文件路径（source_type=video 时使用） |
 | `fps` | `float` | 5.0 | 目标帧率 |
-| `width` | `int` | 640 | 输出帧宽度（FFmpeg 缩放） |
-| `height` | `int` | 640 | 输出帧高度（FFmpeg 缩放） |
-| `reconnect_delay` | `float` | 3.0 | 初始重连间隔（秒） |
-| `reconnect_max_delay` | `float` | 60.0 | 最大重连间隔（秒） |
-| `reconnect_backoff` | `float` | 2.0 | 退避倍数 |
-| `ffmpeg_timeout` | `float` | 10.0 | FFmpeg 连接超时（秒） |
-| `use_gpu_decode` | `bool` | False | 是否启用 GPU 硬解码 |
+| `width` | `int` | 640 | 输出帧宽度 |
+| `height` | `int` | 640 | 输出帧高度 |
+| `reconnect_delay` | `float` | 3.0 | 初始重连间隔（秒，仅 rtsp 模式） |
+| `reconnect_max_delay` | `float` | 60.0 | 最大重连间隔（秒，仅 rtsp 模式） |
+| `reconnect_backoff` | `float` | 2.0 | 退避倍数（仅 rtsp 模式） |
+| `ffmpeg_timeout` | `float` | 10.0 | FFmpeg 连接超时（秒，仅 rtsp 模式） |
+| `use_gpu_decode` | `bool` | False | 是否启用 GPU 硬解码（仅 rtsp 模式） |
 
 ## 3. 内部逻辑
 
@@ -247,13 +249,15 @@ _run_loop():
 |--------|------|--------|------|
 | `camera.camera_id` | `str` | 必填 | 摄像头唯一 ID |
 | `camera.camera_name` | `str` | 必填 | 摄像头显示名称 |
-| `camera.rtsp_url` | `str` | 必填 | RTSP 流地址 |
+| `camera.source_type` | `str` | `"rtsp"` | 数据源类型：rtsp / video / test |
+| `camera.rtsp_url` | `str` | `""` | RTSP 流地址（source_type=rtsp 时必填） |
+| `camera.video_path` | `str` | `""` | 视频文件路径（source_type=video 时必填） |
 | `camera.fps` | `float` | 继承全局 | 该路目标帧率 |
 | `camera.width` | `int` | 继承全局 | 该路输出宽度 |
 | `camera.height` | `int` | 继承全局 | 该路输出高度 |
-| `camera.reconnect_delay` | `float` | 3.0 | 初始重连间隔 |
-| `camera.reconnect_max_delay` | `float` | 60.0 | 最大重连间隔 |
-| `camera.use_gpu_decode` | `bool` | False | 是否 GPU 硬解码 |
+| `camera.reconnect_delay` | `float` | 3.0 | 初始重连间隔（仅 rtsp 模式） |
+| `camera.reconnect_max_delay` | `float` | 60.0 | 最大重连间隔（仅 rtsp 模式） |
+| `camera.use_gpu_decode` | `bool` | False | 是否 GPU 硬解码（仅 rtsp 模式） |
 
 ## 6. 错误处理
 
@@ -324,25 +328,64 @@ FFmpeg 子进程方案比 OpenCV 更稳定：
 - 路数多（10 路以上）时可开启，需验证显存是否足够
 - 通过配置项控制，不改变接口
 
-## 8. 端-云扩展预留
+## 8. 数据源模式
 
 ### 8.1 source_type 配置
 
-当前设计仅支持本地拉流模式（stream）。后期扩展边缘设备时，摄像头配置增加 source_type 字段：
+摄像头支持三种数据源模式，通过 `source_type` 字段配置：
+
+| source_type | 说明 | 数据来源 | 使用场景 |
+|-------------|------|---------|---------|
+| `rtsp`（默认） | RTSP 视频流 | FFmpeg 读取 RTSP，输出原始帧 | 生产环境，真实摄像头 |
+| `video` | 本地视频文件 | OpenCV 读取视频文件，循环播放 | 开发测试，用录好的视频 |
+| `test` | 测试图案 | 自动生成渐变背景 + 移动方块 | 开发调试，不需要任何外部文件 |
+
+**配置示例**：
+
+```yaml
+# RTSP 模式（生产）
+camera:
+  id: cam_01
+  name: 仓库入口
+  source_type: rtsp
+  rtsp_url: "rtsp://admin:pass@192.168.1.100/stream"
+
+# 视频文件模式（开发测试）
+camera:
+  id: cam_01
+  name: 测试摄像头
+  source_type: video
+  video_path: "data/test_05.mp4"
+
+# 测试图案模式（开发调试）
+camera:
+  id: cam_01
+  name: 测试摄像头
+  source_type: test
+```
+
+### 8.2 各模式行为
+
+| 模式 | 重连 | 帧率控制 | 循环播放 | 外部依赖 |
+|------|------|---------|---------|---------|
+| rtsp | ✅ 指数退避重连 | ✅ | ❌（断线重连） | FFmpeg |
+| video | ❌（播放完循环） | ✅ | ✅ | OpenCV |
+| test | ❌（持续生成） | ✅ | N/A | 无 |
+
+### 8.3 边缘设备扩展（预留）
+
+后期扩展边缘设备时，增加 `source_type=edge`：
 
 | source_type | 说明 | 数据来源 |
 |-------------|------|---------|
-| stream（默认） | 本地拉流 | FFmpeg 读取 RTSP，输出原始帧 |
 | edge | 边缘设备上报 | HTTP/MQTT 接收边缘设备的检测结果 |
 
 当 source_type=edge 时，CameraThread 不再启动 FFmpeg 进程，而是启动一个 HTTP/MQTT 监听服务，接收边缘设备推送的检测结果。
 
-### 8.2 边缘上报数据格式
-
-边缘设备上报的数据应与本地检测结果格式一致（Detection 列表 + 原始帧可选），确保下游 pipeline 无需修改。
-
-### 8.3 设计约束
+### 8.4 设计约束
 
 - CameraThread 的输出接口不变（帧 + 元数据），source_type 只影响数据获取方式
+- video/test 模式不需要重连逻辑
+- 校验逻辑按 source_type 区分：rtsp 必填 rtsp_url，video 必填 video_path
 - 边缘设备断线时，降级为 disconnected 状态，与本地摄像头断线行为一致
 - 不在第一版实现，但接口设计时预留 source_type 字段

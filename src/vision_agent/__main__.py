@@ -268,22 +268,21 @@ def assemble_components(config: dict) -> tuple:
             import yaml
 
             for yaml_file in sorted(cameras_dir.glob("*.yaml")):
-                with open(yaml_file) as f:
+                with open(yaml_file, encoding="utf-8") as f:
                     cam_data = yaml.safe_load(f)
                 if not cam_data or "camera" not in cam_data:
                     continue
                 cam = cam_data["camera"]
+                resolution = cam.get("resolution", [640, 640])
                 cam_config = CameraConfig(
                     camera_id=cam.get("id", ""),
                     camera_name=cam.get("name", ""),
                     rtsp_url=cam.get("rtsp_url", ""),
+                    source_type=cam.get("source_type", "rtsp"),
+                    video_path=cam.get("video_path", ""),
                     fps=cam.get("fps", 5),
-                    width=cam.get("resolution", [640, 640])[0]
-                    if cam.get("resolution")
-                    else 640,
-                    height=cam.get("resolution", [640, 640])[1]
-                    if cam.get("resolution")
-                    else 640,
+                    width=resolution[0] if resolution else 640,
+                    height=resolution[1] if len(resolution) > 1 else 640,
                 )
                 camera_configs.append(
                     CameraConfigItem(camera_config=cam_config, fps=cam.get("fps", 5))

@@ -395,12 +395,18 @@ def validate_camera_config(
     if not camera.get("name", ""):
         result.add_error("camera.name 不能为空")
 
-    # camera.rtsp_url
+    # camera.rtsp_url（仅 source_type=rtsp 时必填）
+    source_type = camera.get("source_type", "rtsp")
     rtsp_url = camera.get("rtsp_url", "")
-    if not rtsp_url:
-        result.add_error("camera.rtsp_url 不能为空")
-    elif not rtsp_url.startswith("rtsp://"):
-        result.add_error(f"camera.rtsp_url 必须以 rtsp:// 开头: {rtsp_url}")
+    if source_type == "rtsp":
+        if not rtsp_url:
+            result.add_error("camera.rtsp_url 不能为空（source_type=rtsp）")
+        elif not rtsp_url.startswith("rtsp://"):
+            result.add_error(f"camera.rtsp_url 必须以 rtsp:// 开头: {rtsp_url}")
+    elif source_type == "video":
+        video_path = camera.get("video_path", "")
+        if not video_path:
+            result.add_error("camera.video_path 不能为空（source_type=video）")
 
     # camera.fps
     fps = camera.get("fps", 5)

@@ -22,7 +22,7 @@ from queue import Empty, Full, Queue
 
 import numpy as np
 
-from vision_agent.core.exceptions import CameraStreamError
+from vision_agent.core.exceptions import CameraConnectionError, CameraStreamError
 from vision_agent.core.types import CameraState, CameraStatus
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,9 @@ class CameraConfig:
 
     camera_id: str
     camera_name: str
-    rtsp_url: str
+    rtsp_url: str = ""
+    source_type: str = "rtsp"  # rtsp / video / test
+    video_path: str = ""  # source_type=video 时使用
     fps: float = 5.0
     width: int = 640
     height: int = 640
@@ -239,7 +241,23 @@ class CameraThread:
         - 指数退避：3s→6s→12s→24s→48s→60s
         - 连接成功后重置退避延迟
         - 连续 5 次失败暂停 10 分钟
+
+        支持三种数据源（开发环境可用视频文件或测试图案替代摄像头）：
+        - rtsp：FFmpeg 读取 RTSP 流
+        - video：OpenCV 读取本地视频文件
+        - test：生成带时间戳的测试图案
         """
+        source_type = self._config.source_type
+
+        # video/test 模式不需要重连逻辑
+        if source_type == "video":
+            self._run_video_loop()
+            return
+        if source_type == "test":
+            self._run_test_loop()
+            return
+
+        # rtsp 模式：标准重连逻辑
         current_delay = self._config.reconnect_delay
         consecutive_failures = 0
         _MAX_CONSECUTIVE_FAILURES = 5
@@ -250,10 +268,8 @@ class CameraThread:
                 self._status = CameraStatus.CONNECTING
                 self._error_message = ""
                 self._connect_and_read_frames()
-                # 连接成功，重置退避延迟和失败计数
                 current_delay = self._config.reconnect_delay
                 consecutive_failures = 0
-                # 正常退出（_running=False）时不重连
                 if not self._running:
                     break
             except Exception as e:
@@ -270,7 +286,6 @@ class CameraThread:
             if not self._running:
                 break
 
-            # 连续失败暂停
             if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
                 self._log.error(
                     "camera_repeated_failure camera=%s failures=%d pause=%.0fs",
@@ -283,7 +298,6 @@ class CameraThread:
                 current_delay = self._config.reconnect_delay
                 continue
 
-            # 断线重连（指数退避）
             self._log.warning(
                 "camera_reconnect camera=%s delay=%.1fs",
                 self._config.camera_id,
@@ -294,6 +308,122 @@ class CameraThread:
                 current_delay * self._config.reconnect_backoff,
                 self._config.reconnect_max_delay,
             )
+
+    def _run_video_loop(self) -> None:
+        """从本地视频文件读取帧（开发模式）"""
+        video_path = self._config.video_path
+        if not video_path:
+            raise CameraConnectionError("video_path 未配置")
+
+        try:
+            import cv2
+        except ImportError:
+            raise CameraConnectionError("opencv-python 未安装，无法使用视频模式")
+
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            raise CameraConnectionError(f"无法打开视频文件: {video_path}")
+
+        self._status = CameraStatus.CONNECTED
+        self._error_message = ""
+        self._log.info("video_source camera=%s path=%s", self._config.camera_id, video_path)
+
+        target_interval = 1.0 / self._config.fps
+
+        try:
+            while self._running:
+                start_time = time.monotonic()
+                ret, frame = cap.read()
+                if not ret:
+                    # 视频结束，循环播放
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+
+                # 缩放到配置尺寸
+                h, w = frame.shape[:2]
+                if w != self._config.width or h != self._config.height:
+                    frame = cv2.resize(frame, (self._config.width, self._config.height))
+
+                self._frame_seq += 1
+                self._total_frames += 1
+                self._last_frame_time = time.time()
+
+                frame_data = FrameData(
+                    camera_id=self._config.camera_id,
+                    frame=frame,
+                    timestamp=self._last_frame_time,
+                    frame_seq=self._frame_seq,
+                    width=self._config.width,
+                    height=self._config.height,
+                )
+                self._frame_queue.put(frame_data)
+
+                # 帧率控制
+                elapsed = time.monotonic() - start_time
+                if elapsed < target_interval:
+                    time.sleep(target_interval - elapsed)
+        finally:
+            cap.release()
+
+    def _run_test_loop(self) -> None:
+        """生成测试图案帧（开发模式，不需要任何外部文件）"""
+        self._status = CameraStatus.CONNECTED
+        self._error_message = ""
+        self._log.info("test_source camera=%s", self._config.camera_id)
+
+        target_interval = 1.0 / self._config.fps
+        import numpy as np
+
+        while self._running:
+            start_time = time.monotonic()
+
+            # 生成带时间戳的测试图案
+            frame = self._generate_test_frame()
+
+            self._frame_seq += 1
+            self._total_frames += 1
+            self._last_frame_time = time.time()
+
+            frame_data = FrameData(
+                camera_id=self._config.camera_id,
+                frame=frame,
+                timestamp=self._last_frame_time,
+                frame_seq=self._frame_seq,
+                width=self._config.width,
+                height=self._config.height,
+            )
+            self._frame_queue.put(frame_data)
+
+            elapsed = time.monotonic() - start_time
+            if elapsed < target_interval:
+                time.sleep(target_interval - elapsed)
+
+    def _generate_test_frame(self) -> np.ndarray:
+        """生成测试图案帧（带颜色渐变和时间戳文字）"""
+        import numpy as np
+
+        w, h = self._config.width, self._config.height
+        frame = np.zeros((h, w, 3), dtype=np.uint8)
+
+        # 渐变背景
+        t = time.time()
+        r = int((np.sin(t * 0.5) + 1) * 127)
+        g = int((np.sin(t * 0.3 + 2) + 1) * 127)
+        b = int((np.sin(t * 0.7 + 4) + 1) * 127)
+        frame[:, :] = [b, g, r]  # BGR
+
+        # 网格线
+        for x in range(0, w, 80):
+            frame[:, x] = [200, 200, 200]
+        for y in range(0, h, 80):
+            frame[y, :] = [200, 200, 200]
+
+        # 模拟目标（移动的矩形）
+        box_x = int((np.sin(t * 0.8) + 1) * (w - 100) / 2)
+        box_y = int((np.cos(t * 0.6) + 1) * (h - 100) / 2)
+        frame[box_y : box_y + 100, box_x : box_x + 100] = [0, 0, 255]  # 红色方块
+
+        return frame
 
     def _connect_and_read_frames(self) -> None:
         """连接 FFmpeg 并读取帧"""
