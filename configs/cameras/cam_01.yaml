@@ -1,0 +1,12 @@
+# 开发环境摄像头配置 — 测试图案模式
+# source_type: test 会自动生成带渐变背景和移动方块的测试帧
+# 不需要真实摄像头或视频文件
+
+camera:
+  id: cam_01
+  name: 测试摄像头-01
+  source_type: video    # rtsp / video / test
+  # rtsp_url: "rtsp://..."   # source_type=rtsp 时填写
+  video_path: "data/test_05.mp4"  # source_type=video 时填写
+  fps: 5
+  resolution: [640, 640]
