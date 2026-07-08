@@ -127,9 +127,7 @@ Icon?
 # ─── Docker ───
 docker-compose.override.yml
 
-# ─── FFmpeg 临时文件（不排除 TypeScript） ───
-data/**/*.ts
-data/**/*.m3u8
+# ─── FFmpeg 临时文件 ───
 *.part
 
 # ─── 性能测试结果 ───
@@ -138,5 +136,5 @@ benchmarks/
 *.pstats
 cprofile_*
 
-# ─── 知识库文档源文件 ───
-data/knowledge/
+# ─── 前端构建产物 ───
+frontend/dist/
