@@ -23,7 +23,6 @@ export interface CameraState {
   gpu_latency_ms: number
   queue_size: number
   last_frame_time: number
-  total_frames: number
   total_detections: number
   total_alerts: number
   uptime_seconds: number

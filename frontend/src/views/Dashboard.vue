@@ -162,13 +162,13 @@ onMounted(async () => {
   initCharts()
   refreshTimer = setInterval(() => {
     systemStore.fetchHealth()
-    systemStore.fetchStats('today')
-  }, 10000)
+  }, 30000)
+  document.addEventListener('visibilitychange', handleVisibility)
 })
 
 onUnmounted(() => {
   clearInterval(refreshTimer)
-  clearTimeout(newAlertTimer)
+  document.removeEventListener('visibilitychange', handleVisibility)
   window.removeEventListener('resize', handleResize)
   trendChart?.dispose()
   pieChart?.dispose()
@@ -181,6 +181,16 @@ function handleResize() {
   barChart?.resize()
 }
 window.addEventListener('resize', handleResize)
+
+// 页面隐藏时暂停轮询，可见时恢复
+function handleVisibility() {
+  if (document.hidden) {
+    clearInterval(refreshTimer)
+  } else {
+    systemStore.fetchHealth()
+    refreshTimer = setInterval(() => systemStore.fetchHealth(), 30000)
+  }
+}
 
 function initCharts() {
   initTrendChart()
@@ -197,12 +207,10 @@ function initTrendChart() {
 function updateTrendChart() {
   if (!trendChart) return
   const stats = systemStore.getStats(trendPeriod.value)
-  // 从 stats 构造趋势数据（后端返回的 groups 按天聚合）
   const groups = stats?.groups || []
   const dates = groups.map((g: any) => g.group_key)
   const values = groups.map((g: any) => g.count)
 
-  // 如果没有真实数据，用占位
   if (dates.length === 0) {
     const today = new Date()
     for (let i = 6; i >= 0; i--) {
@@ -213,20 +221,23 @@ function updateTrendChart() {
     }
   }
 
-  trendChart.setOption({
-    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-    xAxis: { type: 'category', data: dates, axisLabel: { color: '#8c8c8c' } },
-    yAxis: { type: 'value', name: '告警数', axisLabel: { color: '#8c8c8c' } },
-    series: [{
-      type: 'line',
-      data: values,
-      smooth: true,
-      areaStyle: { color: 'rgba(24, 144, 255, 0.15)' },
-      lineStyle: { color: '#1890FF', width: 2 },
-      itemStyle: { color: '#1890FF' },
-    }],
-    grid: { left: 50, right: 20, top: 30, bottom: 30 },
-  })
+  trendChart.setOption(
+    {
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+      xAxis: { type: 'category', data: dates, axisLabel: { color: '#8c8c8c' } },
+      yAxis: { type: 'value', name: '告警数', axisLabel: { color: '#8c8c8c' } },
+      series: [{
+        type: 'line',
+        data: values,
+        smooth: true,
+        areaStyle: { color: 'rgba(24, 144, 255, 0.15)' },
+        lineStyle: { color: '#1890FF', width: 2 },
+        itemStyle: { color: '#1890FF' },
+      }],
+      grid: { left: 50, right: 20, top: 30, bottom: 30 },
+    },
+    { notMerge: false }  // 增量更新，不重建图表
+  )
 }
 
 function initPieChart() {

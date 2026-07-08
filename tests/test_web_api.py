@@ -84,7 +84,6 @@ def _make_camera_state(camera_id: str = "cam-1") -> CameraState:
         current_fps=25.0,
         gpu_latency_ms=12.5,
         queue_size=2,
-        total_frames=1000,
         total_alerts=5,
     )
 

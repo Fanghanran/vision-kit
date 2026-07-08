@@ -670,7 +670,7 @@ class VisionAgent:
         # 录制器
         self._recorder = ClipRecorder(
             config=recorder_config,
-            fps=camera_configs[0].fps if camera_configs else 5.0,
+            fps=camera_configs[0].fps if camera_configs and camera_configs[0].fps > 0 else 15.0,
         )
 
         # 规则引擎
@@ -899,10 +899,20 @@ class VisionAgent:
 
     # ─── 摄像头状态 ────────────────────────────────────────────
 
+    def get_camera_thread(self, camera_id: str) -> CameraThread | None:
+        """根据 camera_id 获取摄像头线程实例"""
+        with self._lock:
+            for thread in self._camera_threads:
+                if thread.camera_id == camera_id:
+                    return thread
+        return None
+
     def get_camera_states(self) -> dict[str, CameraState]:
         """获取所有摄像头的运行状态快照"""
         states: dict[str, CameraState] = {}
-        for thread in self._camera_threads:
+        with self._lock:
+            threads_snapshot = list(self._camera_threads)
+        for thread in threads_snapshot:
             state = thread.camera_state
             # 更新由 pipeline 维护的计数
             state.total_alerts = self._total_alerts

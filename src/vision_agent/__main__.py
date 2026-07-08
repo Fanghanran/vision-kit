@@ -280,12 +280,12 @@ def assemble_components(config: dict) -> tuple:
                     rtsp_url=cam.get("rtsp_url", ""),
                     source_type=cam.get("source_type", "rtsp"),
                     video_path=cam.get("video_path", ""),
-                    fps=cam.get("fps", 5),
+                    fps=cam.get("fps", 0),
                     width=resolution[0] if resolution else 640,
                     height=resolution[1] if len(resolution) > 1 else 640,
                 )
                 camera_configs.append(
-                    CameraConfigItem(camera_config=cam_config, fps=cam.get("fps", 5))
+                    CameraConfigItem(camera_config=cam_config, fps=cam.get("fps", 0))
                 )
         except Exception as e:
             logger.error("camera_config_load_failed error=%s", str(e))

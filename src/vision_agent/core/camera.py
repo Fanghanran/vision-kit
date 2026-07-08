@@ -40,7 +40,7 @@ class CameraConfig:
     rtsp_url: str = ""
     source_type: str = "rtsp"  # rtsp / video / test
     video_path: str = ""  # source_type=video 时使用
-    fps: float = 5.0
+    fps: float = 0.0  # 0 表示自动检测
     width: int = 640
     height: int = 640
     reconnect_delay: float = 3.0
@@ -167,6 +167,15 @@ class CameraThread:
         self._start_time = 0.0
         self._last_frame_time = 0.0
 
+        # 实时帧率（滑动窗口）
+        self._fps_window_start = 0.0
+        self._fps_window_count = 0
+        self._realtime_fps = 0.0
+
+        # 帧订阅者（用于 WebSocket 视频流推送）
+        self._frame_subscribers: list[Queue[FrameData | None]] = []
+        self._subscribers_lock = threading.Lock()
+
         # 线程控制
         self._running = False
         self._thread: threading.Thread | None = None
@@ -192,6 +201,13 @@ class CameraThread:
     def stop(self) -> None:
         """停止采集线程，终止 FFmpeg 子进程"""
         self._running = False
+        # 通知所有订阅者结束
+        with self._subscribers_lock:
+            for q in self._frame_subscribers:
+                try:
+                    q.put_nowait(None)
+                except Full:
+                    pass
         self._terminate_ffmpeg()
         if self._thread:
             self._thread.join(timeout=5)
@@ -201,6 +217,28 @@ class CameraThread:
 
     def is_alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def subscribe_frames(self, maxsize: int = 30) -> Queue[FrameData | None]:
+        """订阅帧流，返回一个 Queue。None 表示结束信号。"""
+        q: Queue[FrameData | None] = Queue(maxsize=maxsize)
+        with self._subscribers_lock:
+            self._frame_subscribers.append(q)
+        return q
+
+    def unsubscribe_frames(self, q: Queue[FrameData | None]) -> None:
+        """取消帧订阅"""
+        with self._subscribers_lock:
+            if q in self._frame_subscribers:
+                self._frame_subscribers.remove(q)
+
+    def _push_to_subscribers(self, frame: FrameData) -> None:
+        """将帧推送给所有订阅者，队列满则丢弃"""
+        with self._subscribers_lock:
+            for q in self._frame_subscribers:
+                try:
+                    q.put_nowait(frame)
+                except Full:
+                    pass
 
     @property
     def camera_id(self) -> str:
@@ -225,7 +263,6 @@ class CameraThread:
             gpu_latency_ms=0.0,
             queue_size=self._frame_queue.size,
             last_frame_time=self._last_frame_time,
-            total_frames=self._total_frames,
             total_detections=self._total_detections,
             total_alerts=self._total_alerts,
             uptime_seconds=elapsed,
@@ -233,6 +270,31 @@ class CameraThread:
         )
 
     # ─── 内部方法 ──────────────────────────────────────────────
+
+    def _resolve_fps(self) -> float:
+        """根据来源类型自动检测帧率"""
+        fps = self._config.fps
+        if fps > 0:
+            return fps
+
+        source_type = self._config.source_type
+        if source_type == "test":
+            return 25.0
+        if source_type == "video":
+            try:
+                import cv2
+
+                cap = cv2.VideoCapture(self._config.video_path)
+                if cap.isOpened():
+                    native_fps = cap.get(cv2.CAP_PROP_FPS)
+                    cap.release()
+                    if native_fps > 0:
+                        return native_fps
+            except Exception:
+                pass
+            return 25.0
+        # rtsp: 无法提前检测，默认 15
+        return 15.0
 
     def _run_loop(self) -> None:
         """主循环：连接 → 读帧 → 断线重连
@@ -267,6 +329,14 @@ class CameraThread:
             try:
                 self._status = CameraStatus.CONNECTING
                 self._error_message = ""
+                self._frame_seq = 0
+                self._total_frames = 0
+                self._total_detections = 0
+                self._total_alerts = 0
+                self._start_time = time.time()
+                self._fps_window_start = 0.0
+                self._fps_window_count = 0
+                self._realtime_fps = 0.0
                 self._connect_and_read_frames()
                 current_delay = self._config.reconnect_delay
                 consecutive_failures = 0
@@ -328,7 +398,8 @@ class CameraThread:
         self._error_message = ""
         self._log.info("video_source camera=%s path=%s", self._config.camera_id, video_path)
 
-        target_interval = 1.0 / self._config.fps
+        fps = self._resolve_fps()
+        target_interval = 1.0 / fps
 
         try:
             while self._running:
@@ -347,6 +418,7 @@ class CameraThread:
                 self._frame_seq += 1
                 self._total_frames += 1
                 self._last_frame_time = time.time()
+                self._update_fps_window()
 
                 frame_data = FrameData(
                     camera_id=self._config.camera_id,
@@ -357,6 +429,7 @@ class CameraThread:
                     height=self._config.height,
                 )
                 self._frame_queue.put(frame_data)
+                self._push_to_subscribers(frame_data)
 
                 # 帧率控制
                 elapsed = time.monotonic() - start_time
@@ -369,9 +442,10 @@ class CameraThread:
         """生成测试图案帧（开发模式，不需要任何外部文件）"""
         self._status = CameraStatus.CONNECTED
         self._error_message = ""
-        self._log.info("test_source camera=%s", self._config.camera_id)
 
-        target_interval = 1.0 / self._config.fps
+        fps = self._resolve_fps()
+        target_interval = 1.0 / fps
+        self._log.info("test_source camera=%s fps=%.1f", self._config.camera_id, fps)
         import numpy as np
 
         while self._running:
@@ -383,6 +457,7 @@ class CameraThread:
             self._frame_seq += 1
             self._total_frames += 1
             self._last_frame_time = time.time()
+            self._update_fps_window()
 
             frame_data = FrameData(
                 camera_id=self._config.camera_id,
@@ -393,6 +468,7 @@ class CameraThread:
                 height=self._config.height,
             )
             self._frame_queue.put(frame_data)
+            self._push_to_subscribers(frame_data)
 
             elapsed = time.monotonic() - start_time
             if elapsed < target_interval:
@@ -445,7 +521,8 @@ class CameraThread:
         self._error_message = ""
 
         frame_size = self._config.width * self._config.height * 3
-        target_interval = 1.0 / self._config.fps
+        fps = self._resolve_fps()
+        target_interval = 1.0 / fps
 
         while self._running:
             start_time = time.monotonic()
@@ -480,6 +557,7 @@ class CameraThread:
             self._frame_seq += 1
             self._total_frames += 1
             self._last_frame_time = time.time()
+            self._update_fps_window()
 
             frame_data = FrameData(
                 camera_id=self._config.camera_id,
@@ -492,6 +570,7 @@ class CameraThread:
 
             # 放入队列
             self._frame_queue.put(frame_data)
+            self._push_to_subscribers(frame_data)
 
             # 帧率控制
             elapsed = time.monotonic() - start_time
@@ -545,15 +624,23 @@ class CameraThread:
         finally:
             self._ffmpeg_process = None
 
-    def _calculate_fps(self) -> float:
-        """计算实际 FPS（基于最近的帧间隔）"""
-        if self._total_frames < 2 or not self._start_time:
-            return 0.0
-        elapsed = time.time() - self._start_time
-        if elapsed <= 0:
-            return 0.0
-        return self._total_frames / elapsed
+    def _update_fps_window(self) -> None:
+        """每收到一帧调用，滑动窗口计算实时帧率"""
+        now = time.time()
+        if self._fps_window_start == 0.0:
+            self._fps_window_start = now
+            self._fps_window_count = 1
+            return
+        self._fps_window_count += 1
+        elapsed = now - self._fps_window_start
+        if elapsed >= 1.0:
+            self._realtime_fps = round(self._fps_window_count / elapsed, 1)
+            self._fps_window_start = now
+            self._fps_window_count = 0
 
+    def _calculate_fps(self) -> float:
+        """返回实时 FPS（基于最近 1 秒窗口）"""
+        return self._realtime_fps
     def update_detection_count(self, count: int) -> None:
         """由 pipeline 调用，更新检测计数"""
         self._total_detections += count

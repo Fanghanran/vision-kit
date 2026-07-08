@@ -125,12 +125,13 @@ def create_app(
         logger.error("fastapi_not_installed action=skip_web")
         return None
 
-    # Inject Request into module globals so FastAPI can resolve the
-    # stringified annotation (caused by `from __future__ import annotations`).
+    # Inject types into module globals so FastAPI can resolve the
+    # stringified annotations (caused by `from __future__ import annotations`).
     import sys
 
     _module = sys.modules[__name__]
     _module.Request = Request  # type: ignore[attr-defined]
+    _module.WebSocket = WebSocket  # type: ignore[attr-defined]
 
     config = config or {}
     cors_origins = config.get("cors_origins", ["http://localhost:3000"])
@@ -150,14 +151,29 @@ def create_app(
 
     # ─── 路径白名单中间件 ────────────────────────────────────
 
-    _ALLOWED_PREFIXES = ("/api/", "/ws", "/health", "/static/", "/")
+    _ALLOWED_PREFIXES = ("/api/", "/ws", "/health", "/static/")
 
-    @app.middleware("http")
-    async def path_whitelist(request: Any, call_next: Any) -> Any:
-        path = request.url.path
-        if not any(path.startswith(p) for p in _ALLOWED_PREFIXES):
-            return JSONResponse(status_code=404, content={"detail": "Not Found"})
-        return await call_next(request)
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+    class PathWhitelistMiddleware:
+        """ASGI 中间件：路径白名单（兼容 WebSocket）"""
+
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            # WebSocket 和 lifespan 直接放行
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            path = scope.get("path", "")
+            if not any(path.startswith(p) for p in _ALLOWED_PREFIXES):
+                response = JSONResponse(status_code=404, content={"detail": "Not Found"})
+                await response(scope, receive, send)
+                return
+            await self.app(scope, receive, send)
+
+    app.add_middleware(PathWhitelistMiddleware)
 
     # ─── 健康检查 ────────────────────────────────────────────
 
@@ -175,8 +191,8 @@ def create_app(
                     "gpu_memory_used_mb": h.gpu_memory_used_mb,
                     "gpu_memory_total_mb": h.gpu_memory_total_mb,
                     "queue_depth": h.queue_depth,
-                    "inference_latency_p50_ms": h.inference_latency_p50_ms,
-                    "inference_latency_p99_ms": h.inference_latency_p99_ms,
+                    "inference_latency_p50_ms": round(h.inference_latency_p50_ms, 2),
+                    "inference_latency_p99_ms": round(h.inference_latency_p99_ms, 2),
                     "active_cameras": h.active_cameras,
                     "total_cameras": h.total_cameras,
                     "today_alerts": h.today_alerts,
@@ -193,6 +209,77 @@ def create_app(
             return []
         states = pipeline.get_camera_states()
         return [s.to_dict() for s in states.values()]
+
+    _ID_PATTERN = re.compile(r"^[\w\-]+$")
+
+    @app.post("/api/cameras/{camera_id}/toggle")
+    async def toggle_camera(camera_id: str) -> Any:
+        """开关摄像头：在线则停止，离线则启动"""
+        if not _ID_PATTERN.match(camera_id):
+            raise HTTPException(status_code=400, detail="invalid camera_id")
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not available")
+
+        cam_thread = pipeline.get_camera_thread(camera_id)
+        if not cam_thread:
+            raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+
+        if cam_thread.is_alive():
+            cam_thread.stop()
+            return {"camera_id": camera_id, "action": "stopped", "status": "disconnected"}
+        else:
+            cam_thread.start()
+            return {"camera_id": camera_id, "action": "started", "status": "connecting"}
+
+    @app.post("/api/cameras")
+    async def create_camera(body: dict[str, Any] = Body(...)) -> Any:
+        """添加新摄像头"""
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not available")
+
+        from vision_agent.core.camera import CameraConfig
+        from vision_agent.core.pipeline import CameraConfigItem
+
+        camera_id = body.get("id", "")
+        if not camera_id:
+            raise HTTPException(status_code=400, detail="Missing id field")
+        if not _ID_PATTERN.match(camera_id):
+            raise HTTPException(status_code=400, detail="invalid id (allowed: letters, digits, -, _)")
+
+        # 检查是否已存在
+        if pipeline.get_camera_thread(camera_id):
+            raise HTTPException(status_code=409, detail=f"Camera {camera_id} already exists")
+
+        resolution = body.get("resolution", [640, 640])
+        width = max(320, min(resolution[0] if resolution else 640, 4096))
+        height = max(240, min(resolution[1] if len(resolution) > 1 else 640, 4096))
+        cam_config = CameraConfig(
+            camera_id=camera_id,
+            camera_name=body.get("name", camera_id),
+            rtsp_url=body.get("rtsp_url", ""),
+            source_type=body.get("source_type", "rtsp"),
+            video_path=body.get("video_path", ""),
+            fps=body.get("fps", 0),
+            width=width,
+            height=height,
+        )
+        pipeline.add_camera(cam_config, fps=body.get("fps", 0))
+        return {"camera_id": camera_id, "action": "created"}
+
+    @app.delete("/api/cameras/{camera_id}")
+    async def delete_camera(camera_id: str) -> Any:
+        """删除摄像头"""
+        if not _ID_PATTERN.match(camera_id):
+            raise HTTPException(status_code=400, detail="invalid camera_id")
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not available")
+
+        cam_thread = pipeline.get_camera_thread(camera_id)
+        if not cam_thread:
+            raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+
+        pipeline.remove_camera(camera_id)
+        return {"camera_id": camera_id, "action": "deleted"}
 
     # ─── 告警列表 ────────────────────────────────────────────
 
@@ -406,6 +493,144 @@ def create_app(
     async def get_config() -> Any:
         return sanitize_config(config)
 
+    # ─── 认证 API ──────────────────────────────────────────────
+
+    from vision_agent.auth.manager import AuthManager, get_auth_manager
+    from vision_agent.auth.models import Role
+
+    auth_mgr = get_auth_manager()
+
+    def _get_current_user(request: Request) -> Any:
+        """从请求头提取 Token 并验证用户"""
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            user = auth_mgr.verify_token(token)
+            if user:
+                return user
+        return None
+
+    def _require_auth(request: Request) -> Any:
+        """要求认证，未登录返回 401"""
+        user = _get_current_user(request)
+        if not user:
+            raise HTTPException(status_code=401, detail="请先登录")
+        return user
+
+    def _require_role(*roles: Role):
+        """要求特定角色"""
+        def checker(request: Request) -> Any:
+            user = _require_auth(request)
+            if not any(auth_mgr.require_role(user, r) for r in roles):
+                raise HTTPException(status_code=403, detail="权限不足")
+            return user
+        return checker
+
+    @app.post("/api/auth/login")
+    async def auth_login(body: dict[str, Any] = Body(...)) -> Any:
+        username = body.get("username", "")
+        password = body.get("password", "")
+        if not username or not password:
+            raise HTTPException(status_code=400, detail="请输入用户名和密码")
+        token = auth_mgr.login(username, password)
+        if not token:
+            raise HTTPException(status_code=401, detail="用户名或密码错误")
+        user = auth_mgr.get_user(username)
+        return {"token": token, "user": user.to_dict() if user else {"username": username, "role": "unknown"}}
+
+    @app.post("/api/auth/logout")
+    async def auth_logout(user: Any = Depends(_require_auth)) -> Any:
+        auth_mgr.logout(user.username)
+        return {"message": "已退出"}
+
+    @app.get("/api/auth/me")
+    async def auth_me(user: Any = Depends(_require_auth)) -> Any:
+        return user.to_dict()
+
+    @app.put("/api/auth/profile")
+    async def update_profile(
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_auth),
+    ) -> Any:
+        """更新个人资料（头像、邮箱）"""
+        email = body.get("email")
+        avatar_bg = body.get("avatar_bg")
+        try:
+            updated = auth_mgr.update_user(
+                user.username,
+                email=email,
+                avatar_bg=avatar_bg,
+            )
+            return updated
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.post("/api/auth/change-password")
+    async def change_password(
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_auth),
+    ) -> Any:
+        old_pw = body.get("old_password", "")
+        new_pw = body.get("new_password", "")
+        if not old_pw or not new_pw:
+            raise HTTPException(status_code=400, detail="请输入旧密码和新密码")
+        if not auth_mgr.verify_password(old_pw, user.password_hash):
+            raise HTTPException(status_code=401, detail="旧密码错误")
+        auth_mgr.update_user(user.username, password=new_pw)
+        return {"message": "密码已修改"}
+
+    @app.get("/api/users")
+    async def list_users(user: Any = Depends(_require_role(Role.ADMIN))) -> Any:
+        return auth_mgr.list_users()
+
+    @app.post("/api/users")
+    async def create_user(
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        username = body.get("username", "")
+        password = body.get("password", "")
+        role = body.get("role", "viewer")
+        email = body.get("email", "")
+        if not username or not password:
+            raise HTTPException(status_code=400, detail="请输入用户名和密码")
+        try:
+            return auth_mgr.create_user(username, password, role, email=email)
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
+
+    @app.put("/api/users/{username}")
+    async def update_user(
+        username: str,
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        """管理员编辑用户信息"""
+        try:
+            return auth_mgr.update_user(
+                username,
+                email=body.get("email"),
+                password=body.get("password") if body.get("password") else None,
+                role=body.get("role"),
+                status=body.get("status"),
+                avatar_bg=body.get("avatar_bg"),
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @app.delete("/api/users/{username}")
+    async def delete_user(
+        username: str,
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        try:
+            auth_mgr.delete_user(username)
+            return {"message": f"用户 {username} 已删除"}
+        except ValueError as e:
+            detail = str(e)
+            status = 404 if "不存在" in detail else 400
+            raise HTTPException(status_code=status, detail=detail)
+
     # ─── WebSocket ────────────────────────────────────────────
 
     class WSManager:
@@ -447,6 +672,201 @@ def create_app(
             ws_manager.disconnect(ws)
         except Exception:
             ws_manager.disconnect(ws)
+
+    # ─── WebSocket 视频流 ──────────────────────────────────────
+
+    @app.websocket("/ws/video/{camera_id}")
+    async def video_stream(ws: WebSocket, camera_id: str) -> None:
+        """WebSocket JPEG 实时帧推送
+
+        协议（docs/frontend/MONITOR_PANEL.md 4.1 节）：
+        - 前 8 字节帧头：帧序号(uint32) + 时间戳(uint32)
+        - 后续字节：JPEG 数据
+        """
+        import asyncio
+        import re
+        import struct
+        from io import BytesIO
+
+        # 路径遍历防护
+        if not re.match(r"^[\w\-]+$", camera_id):
+            await ws.close(code=1008, reason="invalid camera_id")
+            return
+
+        if not pipeline:
+            await ws.close(code=1008, reason="pipeline not available")
+            return
+
+        cam_thread = pipeline.get_camera_thread(camera_id)
+        if not cam_thread:
+            await ws.close(code=1008, reason=f"camera {camera_id} not found")
+            return
+
+        # 尝试导入图像编码库（模块级缓存）
+        if not hasattr(video_stream, "_encode_jpeg"):
+            video_stream._encode_jpeg = None  # type: ignore[attr-defined]
+            try:
+                import cv2
+
+                def _encode_cv2(frame: Any) -> bytes | None:
+                    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    return buf.tobytes() if ok else None
+
+                video_stream._encode_jpeg = _encode_cv2  # type: ignore[attr-defined]
+            except ImportError:
+                try:
+                    from PIL import Image
+
+                    def _encode_pil(frame: Any) -> bytes | None:
+                        img = Image.fromarray(frame[:, :, ::-1])  # BGR → RGB
+                        buf = BytesIO()
+                        img.save(buf, format="JPEG", quality=80)
+                        return buf.getvalue()
+
+                    video_stream._encode_jpeg = _encode_pil  # type: ignore[attr-defined]
+                except ImportError:
+                    logger.error("no_jpeg_encoder action=skip_video_ws")
+                    await ws.close(code=1011, reason="no JPEG encoder available")
+                    return
+
+        _encode_jpeg = video_stream._encode_jpeg  # type: ignore[attr-defined]
+
+        await ws.accept()
+        frame_queue = cam_thread.subscribe_frames(maxsize=30)
+        logger.info(
+            "video_ws_connected camera=%s thread_status=%s",
+            camera_id,
+            cam_thread.status.value,
+        )
+
+        try:
+            while True:
+                # 在 executor 中阻塞读取帧（不阻塞事件循环）
+                try:
+                    frame_data = await asyncio.get_event_loop().run_in_executor(
+                        None, frame_queue.get, 5.0
+                    )
+                except Exception:
+                    # 超时，发心跳保活
+                    try:
+                        await ws.send_json({"type": "ping"})
+                    except Exception:
+                        break
+                    continue
+
+                if frame_data is None:
+                    break
+
+                jpeg_bytes = _encode_jpeg(frame_data.frame)
+                if jpeg_bytes is None:
+                    logger.debug(
+                        "jpeg_encode_failed camera=%s seq=%d",
+                        camera_id,
+                        frame_data.frame_seq,
+                    )
+                    continue
+
+                # 帧头：序号(4B) + 时间戳(4B)
+                header = struct.pack(
+                    ">II",
+                    frame_data.frame_seq & 0xFFFFFFFF,
+                    int(frame_data.timestamp) & 0xFFFFFFFF,
+                )
+                await ws.send_bytes(header + jpeg_bytes)
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.warning("video_ws_error camera=%s error=%s", camera_id, str(e))
+        finally:
+            cam_thread.unsubscribe_frames(frame_queue)
+            logger.info("video_ws_disconnected camera=%s", camera_id)
+
+    # ─── 回放 API ──────────────────────────────────────────────
+
+    @app.get("/api/cameras/{camera_id}/replay")
+    async def camera_replay(
+        camera_id: str,
+        start: float = Query(..., description="起始时间戳（Unix 秒）"),
+        end: float = Query(..., description="结束时间戳（Unix 秒）"),
+    ) -> Any:
+        """返回指定时间段的录像 MP4 文件"""
+        import re as _re
+
+        if not _re.match(r"^[\w\-]+$", camera_id):
+            raise HTTPException(status_code=400, detail="invalid camera_id")
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not available")
+
+        from pathlib import Path
+
+        clip_dir = Path("data/clips") / camera_id
+        if not clip_dir.exists():
+            raise HTTPException(status_code=404, detail="No recordings found")
+
+        clips = sorted(clip_dir.glob("*.mp4"))
+        for clip_path in clips:
+            try:
+                ts_str = clip_path.stem.split("_")[0]
+                clip_ts = float(ts_str)
+                if start <= clip_ts <= end:
+                    return FileResponse(
+                        str(clip_path),
+                        media_type="video/mp4",
+                        headers={
+                            "Content-Disposition": f'inline; filename="{camera_id}_{clip_ts:.0f}.mp4"'
+                        },
+                    )
+            except (ValueError, IndexError):
+                continue
+
+        raise HTTPException(status_code=404, detail="No recording in specified time range")
+
+    @app.get("/api/cameras/{camera_id}/timeline")
+    async def camera_timeline(
+        camera_id: str,
+        date: str = Query(..., description="日期 YYYY-MM-DD"),
+    ) -> Any:
+        """返回指定日期有录像的时间段列表"""
+        import re as _re
+        from datetime import datetime, timezone
+
+        if not _re.match(r"^[\w\-]+$", camera_id):
+            raise HTTPException(status_code=400, detail="invalid camera_id")
+
+        from pathlib import Path
+
+        clip_dir = Path("data/clips") / camera_id
+        if not clip_dir.exists():
+            return {"camera_id": camera_id, "date": date, "segments": []}
+
+        try:
+            day_start = datetime.strptime(date, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc
+            ).timestamp()
+            day_end = day_start + 86400
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format")
+
+        segments: list[dict[str, Any]] = []
+        clips = sorted(clip_dir.glob("*.mp4"))
+        for clip_path in clips:
+            try:
+                ts_str = clip_path.stem.split("_")[0]
+                clip_ts = float(ts_str)
+                if day_start <= clip_ts < day_end:
+                    file_size = clip_path.stat().st_size
+                    duration_est = max(1.0, file_size / (5 * 50_000))
+                    segments.append(
+                        {
+                            "start": clip_ts,
+                            "end": clip_ts + duration_est,
+                            "size_bytes": file_size,
+                        }
+                    )
+            except (ValueError, IndexError):
+                continue
+
+        return {"camera_id": camera_id, "date": date, "segments": segments}
 
     # ─── 广播接口（供 pipeline 调用）──────────────────────────
 

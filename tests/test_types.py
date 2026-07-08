@@ -486,7 +486,6 @@ class TestCameraState:
             gpu_latency_ms=12.5,
             queue_size=3,
             last_frame_time=1700000000.0,
-            total_frames=5000,
             total_detections=120,
             total_alerts=5,
             uptime_seconds=3600.0,
@@ -500,7 +499,6 @@ class TestCameraState:
         assert cs2.current_fps == pytest.approx(cs.current_fps)
         assert cs2.gpu_latency_ms == pytest.approx(cs.gpu_latency_ms)
         assert cs2.queue_size == cs.queue_size
-        assert cs2.total_frames == cs.total_frames
         assert cs2.total_detections == cs.total_detections
         assert cs2.total_alerts == cs.total_alerts
         assert cs2.is_online is True

@@ -1,6 +1,12 @@
 <template>
   <el-config-provider :locale="zhCn">
-    <div class="app-container" :class="{ 'dark-mode': isDark }">
+    <div v-if="isLoginPage" class="app-container">
+      <router-view />
+    </div>
+    <div v-else-if="isStandalone" class="app-container">
+      <router-view />
+    </div>
+    <div v-else class="app-container" :class="{ 'dark-mode': isDark }">
       <AppHeader @toggle-dark="toggleDark" />
       <div class="app-body">
         <AppSidebar />
@@ -14,18 +20,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useAuthStore } from '@/stores/auth'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppFooter from '@/components/layout/AppFooter.vue'
 
+const route = useRoute()
 const { connect } = useWebSocket()
+const authStore = useAuthStore()
 
 const isDark = ref(false)
+const isLoginPage = computed(() => route.name === 'Login')
+const isStandalone = computed(() => ['Profile'].includes(route.name as string))
 
-onMounted(() => {
+onMounted(async () => {
+  await authStore.fetchMe()
   connect()
   // 读取暗色模式偏好
   isDark.value = localStorage.getItem('va-theme') === 'dark'

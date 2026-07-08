@@ -377,7 +377,6 @@ class CameraState:
     gpu_latency_ms: float = 0.0
     queue_size: int = 0
     last_frame_time: float = 0.0
-    total_frames: int = 0
     total_detections: int = 0
     total_alerts: int = 0
     uptime_seconds: float = 0.0
@@ -395,7 +394,6 @@ class CameraState:
             "gpu_latency_ms": self.gpu_latency_ms,
             "queue_size": self.queue_size,
             "last_frame_time": self.last_frame_time,
-            "total_frames": self.total_frames,
             "total_detections": self.total_detections,
             "total_alerts": self.total_alerts,
             "uptime_seconds": self.uptime_seconds,
@@ -411,7 +409,6 @@ class CameraState:
             gpu_latency_ms=data.get("gpu_latency_ms", 0.0),
             queue_size=data.get("queue_size", 0),
             last_frame_time=data.get("last_frame_time", 0.0),
-            total_frames=data.get("total_frames", 0),
             total_detections=data.get("total_detections", 0),
             total_alerts=data.get("total_alerts", 0),
             uptime_seconds=data.get("uptime_seconds", 0.0),

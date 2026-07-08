@@ -6,6 +6,10 @@ import type { WSMessage } from '@/api/types'
 
 const wsStatus = ref<'connected' | 'disconnected'>('disconnected')
 let ws: WebSocket | null = null
+let pendingMessages: WSMessage[] = []
+let rafId: number | null = null
+
+const BATCH_INTERVAL = 100 // 每 100ms 合并处理一次消息
 
 export function useWebSocket() {
   function connect() {
@@ -29,7 +33,8 @@ export function useWebSocket() {
     ws.onmessage = (event) => {
       try {
         const msg: WSMessage = JSON.parse(event.data)
-        handleMessage(msg)
+        pendingMessages.push(msg)
+        scheduleBatchProcess()
       } catch (e) {
         console.warn('[ws] parse error:', e)
       }
@@ -51,30 +56,53 @@ export function useWebSocket() {
       ws = null
     }
     wsStatus.value = 'disconnected'
+    pendingMessages = []
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
   }
 
-  function handleMessage(msg: WSMessage) {
+  function scheduleBatchProcess() {
+    if (rafId !== null) return
+    rafId = requestAnimationFrame(() => {
+      processBatch(pendingMessages)
+      pendingMessages = []
+      rafId = null
+    })
+  }
+
+  function processBatch(messages: WSMessage[]) {
     const alertsStore = useAlertsStore()
     const camerasStore = useCamerasStore()
     const systemStore = useSystemStore()
 
-    switch (msg.type) {
-      case 'new_alert':
-        alertsStore.addRealtimeAlert(msg.alert || msg)
-        break
-      case 'alert_status':
-        if (msg.alert_id && msg.new_status) {
-          alertsStore.updateAlertStatusById(msg.alert_id, msg.new_status)
-        }
-        break
-      case 'system_status':
-        systemStore.updateHealth(msg)
-        break
-      case 'camera_status':
-        if (msg.camera_id && msg.new_status) {
-          camerasStore.updateCameraStatus(msg.camera_id, msg.new_status)
-        }
-        break
+    // 去重：相同类型+相同 ID 只保留最新的
+    const deduped = new Map<string, WSMessage>()
+    for (const msg of messages) {
+      const key = msg.type + '_' + (msg.alert_id || msg.camera_id || '')
+      deduped.set(key, msg)
+    }
+
+    for (const msg of deduped.values()) {
+      switch (msg.type) {
+        case 'new_alert':
+          alertsStore.addRealtimeAlert(msg.alert || msg)
+          break
+        case 'alert_status':
+          if (msg.alert_id && msg.new_status) {
+            alertsStore.updateAlertStatusById(msg.alert_id, msg.new_status)
+          }
+          break
+        case 'system_status':
+          systemStore.updateHealth(msg as unknown as any)
+          break
+        case 'camera_status':
+          if (msg.camera_id && msg.new_status) {
+            camerasStore.updateCameraStatus(msg.camera_id, msg.new_status)
+          }
+          break
+      }
     }
   }
 

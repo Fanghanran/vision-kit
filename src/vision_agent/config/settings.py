@@ -645,11 +645,57 @@ class ConfigManager:
 
     # ─── 热重载 ────────────────────────────────────────────────
 
+    # 全局配置热加载字段白名单（其他字段修改后记录 WARNING 提示重启）
+    _GLOBAL_HOT_RELOADABLE = {
+        "system.log_level",
+        "system.log_max_size_mb",
+        "system.log_backup_count",
+        "llm.enabled",
+        "llm.api_base",
+        "llm.api_key",
+        "llm.model",
+        "llm.timeout",
+        "llm.max_retries",
+        "llm.daily_budget",
+        "notification.webhook.enabled",
+        "notification.webhook.url",
+        "notification.email.enabled",
+        "notification.email.smtp_host",
+        "notification.email.smtp_port",
+        "notification.email.username",
+        "notification.email.password",
+        "notification.email.recipients",
+        "rules.hot_reload",
+        "rules.hot_reload_interval",
+    }
+
+    _GLOBAL_IMMUTABLE_WHEN_CHANGED = {
+        "gpu.device_id",
+        "detector.model_path",
+        "detector.model_name",
+        "web.port",
+        "web.host",
+        "storage.type",
+        "storage.sqlite.path",
+        "storage.postgres.host",
+        "storage.postgres.port",
+        "storage.postgres.database",
+        "storage.postgres.username",
+        "storage.postgres.password",
+        "redis.enabled",
+        "redis.host",
+        "redis.port",
+        "redis.password",
+        "system.data_dir",
+        "system.log_dir",
+    }
+
     def start_hot_reload(self) -> None:
-        """启动摄像头配置热重载监控线程"""
+        """启动热重载监控线程（摄像头配置 + 全局配置安全字段）"""
         if self._reload_thread and self._reload_thread.is_alive():
             return
         self._running = True
+        self._global_config_mtime = self._config_path.stat().st_mtime
         self._reload_thread = threading.Thread(
             target=self._hot_reload_loop, name="config-reload", daemon=True
         )
@@ -667,15 +713,63 @@ class ConfigManager:
         logger.info("config_hot_reload_stopped")
 
     def _hot_reload_loop(self) -> None:
-        """热重载主循环（config.md 3.5 节）"""
+        """热重载主循环（摄像头配置 + 全局安全字段）"""
         while self._running:
             time.sleep(self._hot_reload_interval)
             if not self._running:
                 break
             try:
                 self._check_camera_changes()
+                self._check_global_config_changes()
             except Exception as e:
                 logger.error("config_hot_reload_error error=%s", str(e), exc_info=True)
+
+    def _check_global_config_changes(self) -> None:
+        """检查 settings.yaml 是否修改，有变化时热加载安全字段"""
+        try:
+            current_mtime = self._config_path.stat().st_mtime
+        except OSError:
+            return
+        if current_mtime <= self._global_config_mtime:
+            return
+        self._global_config_mtime = current_mtime
+
+        try:
+            raw = load_yaml(self._config_path)
+            raw = substitute_env_vars(raw)
+        except Exception as e:
+            logger.warning("global_config_reload_parse_error error=%s", str(e))
+            return
+
+        new_config = deep_merge(_DEFAULTS, raw)
+        old_config = self._global_config
+
+        # 安全字段：直接热更新
+        updated_count = 0
+        for path in self._GLOBAL_HOT_RELOADABLE:
+            new_val = _get_nested(new_config, path)
+            old_val = _get_nested(old_config, path)
+            if new_val != old_val and new_val is not None:
+                _set_nested(self._global_config, path, new_val)
+                updated_count += 1
+                logger.info("global_config_hot_reloaded path=%s", path)
+
+        # 不可变字段：检测变化并记录 WARNING
+        for path in self._GLOBAL_IMMUTABLE_WHEN_CHANGED:
+            new_val = _get_nested(new_config, path)
+            old_val = _get_nested(old_config, path)
+            if new_val != old_val and new_val is not None:
+                logger.warning(
+                    "global_config_immutable_changed path=%s old=%s new=%s "
+                    "action=restart_required",
+                    path, old_val, new_val,
+                )
+
+        if updated_count > 0:
+            self._notify_watchers("global_updated", "", old_config, self._global_config)
+        logger.info(
+            "global_config_check complete updated=%d", updated_count
+        )
 
     def _check_camera_changes(self) -> None:
         """检查摄像头配置文件变化"""
@@ -813,16 +907,7 @@ class ConfigManager:
 
 
 def _get_nested(data: dict[str, Any], path: str, default: Any = None) -> Any:
-    """按点分路径从字典中获取值
-
-    Args:
-        data: 字典
-        path: 点分路径，如 "gpu.batch_size"
-        default: 路径不存在时的默认值
-
-    Returns:
-        值
-    """
+    """按点分路径从字典中获取值"""
     keys = path.split(".")
     current = data
     for key in keys:
@@ -831,3 +916,14 @@ def _get_nested(data: dict[str, Any], path: str, default: Any = None) -> Any:
         else:
             return default
     return current
+
+
+def _set_nested(data: dict[str, Any], path: str, value: Any) -> None:
+    """按点分路径设置字典值"""
+    keys = path.split(".")
+    current = data
+    for key in keys[:-1]:
+        if key not in current or not isinstance(current[key], dict):
+            current[key] = {}
+        current = current[key]
+    current[keys[-1]] = value

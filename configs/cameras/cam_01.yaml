@@ -8,5 +8,5 @@ camera:
   source_type: video    # rtsp / video / test
   # rtsp_url: "rtsp://..."   # source_type=rtsp 时填写
   video_path: "data/test_05.mp4"  # source_type=video 时填写
-  fps: 5
+  fps: 0  # 0=自动检测（video模式读取原始帧率，test模式25fps）
   resolution: [640, 640]

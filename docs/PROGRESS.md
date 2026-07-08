@@ -8,6 +8,7 @@
 - **仓库**：https://github.com/Fanghanran/vision-kit.git（SSH: git@github.com:Fanghanran/vision-kit.git）
 - **作者**：方瀚然
 - **技术栈**：Python + FastAPI + YOLO + Vue 3
+- **未提交改动**：`.gitignore`（添加 cam_01.yaml/yolov8n.pt 例外）、`camera.py`（FPS round 修复）
 
 ## 文档状态：✅ 全部完成
 

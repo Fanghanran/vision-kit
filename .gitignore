@@ -7,6 +7,7 @@
 configs/settings.yaml
 configs/cameras/*
 !configs/cameras/*.example
+!configs/cameras/cam_01.yaml
 configs/botsort.yaml
 configs/bytetrack.yaml
 .env
@@ -39,6 +40,7 @@ logs/
 
 # ─── 模型文件（体积大，不放 Git） ───
 models/*.pt
+!models/yolov8n.pt
 models/*.onnx
 models/*.engine
 models/*.pth

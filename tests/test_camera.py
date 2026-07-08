@@ -74,7 +74,7 @@ class TestCameraConfig:
 
     def test_default_values(self):
         cfg = _make_config()
-        assert cfg.fps == 5.0
+        assert cfg.fps == 0.0  # 0 表示自动检测
         assert cfg.width == 640
         assert cfg.height == 640
         assert cfg.reconnect_delay == 3.0
@@ -267,7 +267,6 @@ class TestCameraThreadCameraState:
         assert isinstance(state, CameraState)
         assert state.camera_id == "cam_01"
         assert state.status == CameraStatus.CONNECTING
-        assert state.total_frames == 0
         assert state.total_detections == 0
         assert state.total_alerts == 0
         assert state.error_message == ""

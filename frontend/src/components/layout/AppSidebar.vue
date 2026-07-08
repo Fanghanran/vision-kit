@@ -21,6 +21,14 @@
         <el-icon><VideoCamera /></el-icon>
         <template #title>摄像头</template>
       </el-menu-item>
+      <el-menu-item index="/monitor">
+        <el-icon><Film /></el-icon>
+        <template #title>监控</template>
+      </el-menu-item>
+      <el-menu-item v-if="authStore.isAdmin" index="/users">
+        <el-icon><UserFilled /></el-icon>
+        <template #title>用户管理</template>
+      </el-menu-item>
       <el-menu-item index="/system">
         <el-icon><Monitor /></el-icon>
         <template #title>系统</template>
@@ -40,9 +48,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { DataBoard, Bell, VideoCamera, Monitor, Fold, Expand } from '@element-plus/icons-vue'
+import { useAuthStore } from '@/stores/auth'
+import { DataBoard, Bell, VideoCamera, Monitor, Film, UserFilled, Fold, Expand } from '@element-plus/icons-vue'
 
 const route = useRoute()
+const authStore = useAuthStore()
 const isCollapsed = ref(false)
 
 // 响应式自动折叠
