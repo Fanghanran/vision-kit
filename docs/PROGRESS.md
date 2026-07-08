@@ -5,111 +5,97 @@
 ## 项目概况
 
 - **定位**：多路视频智能分析框架（看懂→想明白→做决定）
-- **仓库**：https://github.com/Fanghanran/vision-kit.git（SSH: git@github.com:Fanghanran/vision-kit.git）
+- **仓库**：https://github.com/Fanghanran/vision-kit.git
 - **作者**：方瀚然
 - **技术栈**：Python + FastAPI + YOLO + Vue 3
-- **未提交改动**：`.gitignore`（添加 cam_01.yaml/yolov8n.pt 例外）、`camera.py`（FPS round 修复）
+- **测试**：839 个全部通过
 
 ## 文档状态：✅ 全部完成
 
 | 文档 | 路径 | 状态 |
 |------|------|------|
 | 架构设计 | docs/architecture.md (1200+行，17章) | ✅ |
-| 模块设计书×15 | docs/modules/ (按模块分类) | ✅ |
+| 模块设计书×15 | docs/modules/ | ✅ |
 | 前端设计书 | docs/frontend/DESIGN.md | ✅ |
-| 异常体系设计 | docs/modules/core/exceptions.md | ✅ |
-| 端-云演进 | architecture.md 第16章 | ✅ |
-| 安全设计 | architecture.md 第12章 | ✅ |
+| 监控面板设计书 | docs/frontend/MONITOR_PANEL.md | ✅ |
+| 优化清单 | docs/OPTIMIZATION.md | ✅ |
+| 进度文件 | docs/PROGRESS.md | ✅ |
 | README | README.md | ✅ |
-| 进度文件 | docs/PROGRESS.md（本文件） | ✅ |
 
-## 代码状态：✅ 15/15 后端模块 + 前端全部完成
+## 代码状态
 
-### 后端模块
+### 后端模块（18 个）
 
-| 模块 | 文件 | 行数 | 测试 | Review | 状态 |
-|------|------|------|------|--------|------|
-| core/types.py | src/vision_agent/core/types.py | 415 | 43✅ | ✅ | 完成 |
-| core/camera.py | src/vision_agent/core/camera.py | 395 | 31✅ | ✅ | 完成 |
-| core/detector.py | src/vision_agent/core/detector.py | 415 | 35✅ | ✅ | 完成 |
-| core/tracker.py | src/vision_agent/core/tracker.py | 457 | 26✅ | ✅ | 完成 |
-| core/recorder.py | src/vision_agent/core/recorder.py | 338 | 26✅ | ✅ | 完成 |
-| core/pipeline.py | src/vision_agent/core/pipeline.py | 1089 | 90✅ | ✅ | 完成 |
-| core/exceptions.py | src/vision_agent/core/exceptions.py | 180 | — | ✅ | 完成 |
-| config/settings.py | src/vision_agent/config/settings.py | 833 | 74✅ | ✅ | 完成 |
-| rules/engine.py | src/vision_agent/rules/engine.py | 1004 | 74✅ | ✅ | 完成 |
-| rules/builtin/*.py | src/vision_agent/rules/builtin/__init__.py | 620 | 87✅ | ✅ | 完成 |
-| storage/database.py | src/vision_agent/storage/database.py | 622 | 79✅ | ✅ | 完成 |
-| storage/cache.py | src/vision_agent/storage/cache.py | 423 | 71✅ | ✅ | 完成 |
-| llm/analyzer.py | src/vision_agent/llm/analyzer.py | 466 | 80✅ | ✅ | 完成 |
-| llm/provider.py | src/vision_agent/llm/provider.py | 587 | 56✅ | ✅ | 完成 |
-| actions/notifier.py | src/vision_agent/actions/notifier.py | 470 | 78✅ | ✅ | 完成 |
-| web/api/app.py | src/vision_agent/web/api/app.py | 450 | 76✅ | ✅ | 完成 |
-| __main__.py | src/vision_agent/__main__.py | 436 | — | ✅ | 完成 |
-
-**后端总计**：代码 9437 行，测试 926 个，全部通过。
+| 模块 | 状态 |
+|------|------|
+| core/types.py | ✅ |
+| core/camera.py | ✅ |
+| core/detector.py | ✅ |
+| core/tracker.py | ✅ |
+| core/recorder.py | ✅ |
+| core/pipeline.py | ✅ |
+| core/exceptions.py | ✅ |
+| config/settings.py | ✅ |
+| rules/engine.py | ✅ |
+| rules/builtin/*.py | ✅ |
+| storage/database.py | ✅ |
+| storage/cache.py | ✅ |
+| llm/analyzer.py | ✅ |
+| llm/provider.py | ✅ |
+| actions/notifier.py | ✅ |
+| web/api/app.py | ✅ |
+| auth/models.py | ✅ 新增 |
+| auth/manager.py | ✅ 新增 |
+| __main__.py | ✅ |
 
 ### 前端（Vue 3）
 
-| 类别 | 文件数 | 状态 |
-|------|--------|------|
-| 页面（5个） | Dashboard/AlertList/AlertDetail/Cameras/System | ✅ |
-| 组件（4个） | AppHeader/AppSidebar/AppFooter/TokenDialog | ✅ |
-| 状态管理（4个） | auth/alerts/cameras/system stores | ✅ |
-| API 层（5个） | client/alerts/cameras/system/types | ✅ |
-| WebSocket | useWebSocket composable | ✅ |
-| 样式 | variables.scss（暗色模式支持） | ✅ |
+| 页面 | 状态 |
+|------|------|
+| Dashboard | ✅ |
+| AlertList / AlertDetail | ✅ |
+| Cameras | ✅ |
+| Monitor | ✅ 新增（视频监控面板） |
+| System | ✅ |
+| Login | ✅ 新增（登录页面） |
+| Profile | ✅ 新增（个人设置） |
+| Users | ✅ 新增（用户管理，仅 admin） |
+| 状态管理（5 个 stores） | ✅ |
+| API 层（5 个） | ✅ |
+| WebSocket | ✅ |
 
-**前端总计**：24 个文件，覆盖设计书 100% 功能。
+## 优化清单状态
 
-## 已知问题
+| 项目 | 状态 |
+|------|------|
+| WebSocket 403 | ✅ 已修复 |
+| 视频监控面板 | ✅ 已完成 |
+| 用户角色系统 | ✅ 已完成 |
+| 摄像头管理 | ✅ 已完成 |
+| 前端卡顿优化 | ✅ 已完成 |
+| 全局配置热加载 | ✅ 已完成 |
+| FPS 精度 | ✅ 已完成 |
+| 帧数异常 | ✅ 已完成 |
+| 帧率自动检测 | ✅ 已完成 |
+| Docker 部署 | ⏳ 暂缓 |
+| 性能优化 | ✅ 基础完成 |
 
-- WebSocket 实时推送端点存在 403 问题（uvicorn WebSocket 升级兼容性）
-- 摄像头配置文件需 UTF-8 编码（Windows 默认 GBK 会导致加载失败，已修复）
-- 无用户认证系统（当前无 token 验证）
-
-## 下一步
-
-- 用户角色系统（登录/权限）
-- Docker 部署配置
-- 性能测试与优化
-- WebSocket 端点兼容性修复
-storage/database.py   ← 依赖 types
-storage/cache.py      ← 无依赖
-llm/analyzer.py       ← 依赖 types
-llm/provider.py       ← 无依赖
-actions/notifier.py   ← 依赖 types
-web/api/*.py          ← 依赖全部
-__main__.py           ← 依赖全部
-```
-
-## 工作流（每个模块三步走）
-
-```
-1. 我写代码（读设计书 → 写实现 → ruff check/format）
-2. Review agent（读代码 + 设计书 → 5维度检查 → 输出报告）
-3. Test agent（读代码 → 写 pytest → 运行 → 输出报告）
-4. 根据 Review 修代码
-5. 确认测试通过
-6. git commit + push
-```
-
-## 已知的设计决策
+## 已知设计决策
 
 - **Protocol 依赖注入**：所有核心接口用 Python Protocol 定义
 - **三层队列**：采集→推理→处理，有界队列满则丢旧帧
-- **错误处理**：每模块独立容错，LLM/Redis 可选增强
+- **用户认证**：SQLite 持久化，PBKDF2-SHA256 密码哈希，Token 24h 过期
+- **权限**：admin / operator / viewer 三级角色
 - **端-云预留**：camera/detector/pipeline 设计书已包含端-云扩展章节
-- **安全**：API Token 认证、WebSocket 保护、日志脱敏、路径白名单
+- **安全**：API Token 认证、路径白名单 ASGI 中间件、日志脱敏
 
-## 需要在新会话中告诉 Claude 的话
+## 工作流
 
 ```
-继续 Vision Agent 项目开发。项目在 d:/vision_agent/。
-读 docs/PROGRESS.md 了解当前进度。
-当前完成 7/15 模块（core/types, camera, detector, tracker, recorder, pipeline, config/settings）。
-下一个模块是 rules/engine.py。
-每个模块的工作流：写代码 → Review agent → Test agent → 修代码 → commit。
+1. 写代码（读设计书 → 写实现）
+2. Review agent（审阅）
+3. Test agent（测试）
+4. 根据 Review 修代码
+5. 确认测试通过
+6. git commit + push（等用户指示）
 ```
-
-
