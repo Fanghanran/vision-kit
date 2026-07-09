@@ -446,7 +446,6 @@ class CameraThread:
         fps = self._resolve_fps()
         target_interval = 1.0 / fps
         self._log.info("test_source camera=%s fps=%.1f", self._config.camera_id, fps)
-        import numpy as np
 
         while self._running:
             start_time = time.monotonic()
@@ -476,8 +475,6 @@ class CameraThread:
 
     def _generate_test_frame(self) -> np.ndarray:
         """生成测试图案帧（带颜色渐变和时间戳文字）"""
-        import numpy as np
-
         w, h = self._config.width, self._config.height
         frame = np.zeros((h, w, 3), dtype=np.uint8)
 

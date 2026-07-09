@@ -126,7 +126,7 @@ _DEFAULTS: dict[str, Any] = {
 
 # ─── 异常（统一定义在 core/exceptions.py）────────────────────
 
-from vision_agent.core.exceptions import (  # noqa: E402, F401
+from vision_agent.core.exceptions import (  # noqa: E402, F401, I001
     ConfigError,  # exported for downstream use
     ConfigLoadError,
     ConfigValidationError,

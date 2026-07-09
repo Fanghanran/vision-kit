@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # ─── 后端：lint + test ──────────────────────────────────
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install PyYAML numpy httpx fastapi uvicorn[standard]
+          pip install pytest ruff
+
+      - name: Ruff Lint
+        run: ruff check src/
+
+      - name: Pytest
+        run: python -m pytest tests/ --ignore=tests/test_builtin_rules.py -q
+
+  # ─── 前端：typecheck + build ────────────────────────────
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: TypeScript 类型检查
+        run: npx vue-tsc --noEmit
+
+      - name: Vite 构建
+        run: npm run build

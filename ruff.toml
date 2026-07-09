@@ -1,0 +1,11 @@
+# ruff 配置 — Vision Agent
+
+target-version = "py310"
+line-length = 100
+
+[lint]
+select = ["E", "W", "F"]  # pycodestyle + pyflakes（只检查错误和未使用引用）
+ignore = ["E501"]          # 允许长行
+
+[format]
+quote-style = "double"

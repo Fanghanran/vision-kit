@@ -238,7 +238,6 @@ def create_app(
             raise HTTPException(status_code=404, detail="Pipeline not available")
 
         from vision_agent.core.camera import CameraConfig
-        from vision_agent.core.pipeline import CameraConfigItem
 
         camera_id = body.get("id", "")
         if not camera_id:
@@ -495,7 +494,7 @@ def create_app(
 
     # ─── 认证 API ──────────────────────────────────────────────
 
-    from vision_agent.auth.manager import AuthManager, get_auth_manager
+    from vision_agent.auth.manager import get_auth_manager
     from vision_agent.auth.models import Role
 
     auth_mgr = get_auth_manager()
