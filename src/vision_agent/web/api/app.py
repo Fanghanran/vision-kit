@@ -832,12 +832,7 @@ def create_app(
         if not _re.match(r"^[\w\-]+$", camera_id):
             raise HTTPException(status_code=400, detail="invalid camera_id")
 
-        from pathlib import Path
-
-        clip_dir = Path("data/clips") / camera_id
-        if not clip_dir.exists():
-            return {"camera_id": camera_id, "date": date, "segments": []}
-
+        # 先校验日期格式
         try:
             day_start = datetime.strptime(date, "%Y-%m-%d").replace(
                 tzinfo=timezone.utc
@@ -845,6 +840,12 @@ def create_app(
             day_end = day_start + 86400
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date format")
+
+        from pathlib import Path
+
+        clip_dir = Path("data/clips") / camera_id
+        if not clip_dir.exists():
+            return {"camera_id": camera_id, "date": date, "segments": []}
 
         segments: list[dict[str, Any]] = []
         clips = sorted(clip_dir.glob("*.mp4"))

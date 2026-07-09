@@ -32,7 +32,7 @@ jobs:
         run: ruff check src/
 
       - name: Pytest
-        run: python -m pytest tests/ --ignore=tests/test_builtin_rules.py -q
+        run: pytest tests/ -q
 
   # ─── 前端：typecheck + build ────────────────────────────
   frontend:
