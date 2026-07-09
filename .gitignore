@@ -84,6 +84,7 @@ vision_agent/web/static/assets/
 
 # ─── IDE ───
 .vscode/
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
