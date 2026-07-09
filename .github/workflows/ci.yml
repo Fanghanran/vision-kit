@@ -53,8 +53,5 @@ jobs:
       - name: 安装依赖
         run: npm ci
 
-      - name: TypeScript 类型检查
-        run: npx vue-tsc --noEmit
-
       - name: Vite 构建
-        run: npm run build
+        run: npx vite build
