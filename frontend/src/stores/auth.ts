@@ -14,6 +14,12 @@ interface UserInfo {
   updated_at: number
 }
 
+interface UserPreferences {
+  notify_alert: { enabled: boolean; channels: string[] }
+  notify_system: { enabled: boolean; channels: string[] }
+  notify_daily: { enabled: boolean; channels: string[] }
+}
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('va-token') || '')
   const user = ref<UserInfo | null>(null)
@@ -36,8 +42,10 @@ export const useAuthStore = defineStore('auth', () => {
       client.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
       return true
     } catch (e: any) {
-      const msg = e?.response?.data?.detail || '登录失败'
-      throw new Error(msg)
+      const status = e?.response?.status
+      const detail = e?.response?.data?.detail || ''
+      if (status === 401) throw new Error(detail || '用户名或密码错误')
+      throw new Error(detail || '登录失败')
     } finally {
       loading.value = false
     }
@@ -96,7 +104,44 @@ export const useAuthStore = defineStore('auth', () => {
     return data
   }
 
+  async function getUserStats() {
+    const { data } = await client.get('/api/users/stats')
+    return data as { total_users: number; by_role: Record<string,number>; active_count: number; disabled_count: number; online_count: number }
+  }
+
+  async function getUserSessions(username: string) {
+    const { data } = await client.get(`/api/users/${username}/sessions`)
+    return data as { username: string; ip: string; expires_at: number; remaining_seconds: number }[]
+  }
+
+  async function revokeSessions(username: string) {
+    const { data } = await client.delete(`/api/users/${username}/sessions`)
+    return data
+  }
+
+  async function getLoginHistory(username: string, limit = 20) {
+    const { data } = await client.get(`/api/users/${username}/login-history`, { params: { limit } })
+    return data as { id: number; username: string; ip: string; success: boolean; reason: string; created_at: number }[]
+  }
+
+  async function fetchDetail() {
+    const { data } = await client.get('/api/auth/me/detail')
+    return data as UserInfo & { last_login: { ip: string; time: number; success: boolean } | null; active_sessions: number; preferences: UserPreferences }
+  }
+
+  async function getPreferences() {
+    const { data } = await client.get('/api/auth/me/preferences')
+    return data as UserPreferences
+  }
+
+  async function updatePreferences(payload: Partial<UserPreferences>) {
+    const { data } = await client.put('/api/auth/preferences', payload)
+    return data as UserPreferences
+  }
+
   return { token, user, loading, isLoggedIn, isAdmin,
     login, fetchMe, updateProfile, logout,
-    listUsers, createUser, updateUser, deleteUser, changePassword }
+    listUsers, createUser, updateUser, deleteUser, changePassword,
+    getUserStats, getUserSessions, revokeSessions, getLoginHistory,
+    fetchDetail, getPreferences, updatePreferences }
 })

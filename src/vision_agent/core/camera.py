@@ -269,6 +269,22 @@ class CameraThread:
             error_message=self._error_message,
         )
 
+    @property
+    def source_type(self) -> str:
+        return self._config.source_type
+
+    @property
+    def rtsp_url(self) -> str:
+        return self._config.rtsp_url
+
+    @property
+    def width(self) -> int:
+        return self._config.width
+
+    @property
+    def height(self) -> int:
+        return self._config.height
+
     # ─── 内部方法 ──────────────────────────────────────────────
 
     def _resolve_fps(self) -> float:
@@ -403,6 +419,11 @@ class CameraThread:
 
         try:
             while self._running:
+                # 无订阅者时休眠，不读帧
+                if not self._has_subscribers():
+                    time.sleep(target_interval)
+                    continue
+
                 start_time = time.monotonic()
                 ret, frame = cap.read()
                 if not ret:
@@ -438,8 +459,13 @@ class CameraThread:
         finally:
             cap.release()
 
+    def _has_subscribers(self) -> bool:
+        """是否有活跃的帧订阅者（WebSocket 视频流）"""
+        with self._subscribers_lock:
+            return len(self._frame_subscribers) > 0
+
     def _run_test_loop(self) -> None:
-        """生成测试图案帧（开发模式，不需要任何外部文件）"""
+        """生成测试图案帧（开发模式，没有订阅者时休眠省资源）"""
         self._status = CameraStatus.CONNECTED
         self._error_message = ""
 
@@ -448,6 +474,11 @@ class CameraThread:
         self._log.info("test_source camera=%s fps=%.1f", self._config.camera_id, fps)
 
         while self._running:
+            # 无订阅者时休眠，不生成帧
+            if not self._has_subscribers():
+                time.sleep(target_interval)
+                continue
+
             start_time = time.monotonic()
 
             # 生成带时间戳的测试图案

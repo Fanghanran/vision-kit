@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from vision_agent.auth.models import PERMISSIONS, Role, User, UserStatus
+from vision_agent.auth.models import PERMISSIONS, Role, User, UserStatus, LoginHistoryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,37 @@ _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)",
     "CREATE INDEX IF NOT EXISTS idx_users_status ON users(status)",
 ]
+
+_CREATE_LOGIN_HISTORY_TABLE = """
+CREATE TABLE IF NOT EXISTS login_history (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    username   TEXT NOT NULL,
+    ip         TEXT DEFAULT '',
+    success    INTEGER NOT NULL DEFAULT 1,
+    reason     TEXT DEFAULT '',
+    created_at REAL NOT NULL,
+    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+)
+"""
+
+_CREATE_HISTORY_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_login_history_username ON login_history(username)",
+    "CREATE INDEX IF NOT EXISTS idx_login_history_created ON login_history(created_at)",
+]
+
+_CREATE_PREFERENCES_TABLE = """
+CREATE TABLE IF NOT EXISTS user_preferences (
+    username               TEXT PRIMARY KEY,
+    notify_alert_enabled   INTEGER NOT NULL DEFAULT 1,
+    notify_alert_channels  TEXT NOT NULL DEFAULT '["webhook"]',
+    notify_system_enabled  INTEGER NOT NULL DEFAULT 1,
+    notify_system_channels TEXT NOT NULL DEFAULT '["webhook"]',
+    notify_daily_enabled   INTEGER NOT NULL DEFAULT 0,
+    notify_daily_channels  TEXT NOT NULL DEFAULT '["webhook"]',
+    updated_at             REAL NOT NULL,
+    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+)
+"""
 
 
 def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
@@ -62,7 +93,7 @@ class AuthManager:
     def __init__(self, db_path: str | Path = "data/auth.db") -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._tokens: dict[str, tuple[str, float]] = {}
+        self._tokens: dict[str, tuple[str, str, float]] = {}  # username → (token, ip, expiry)
         self._failed_attempts: dict[str, tuple[int, float]] = {}
         self._lock = threading.Lock()
 
@@ -88,6 +119,10 @@ class AuthManager:
         conn.execute(_CREATE_USERS_TABLE)
         for idx in _CREATE_INDEXES:
             conn.execute(idx)
+        conn.execute(_CREATE_LOGIN_HISTORY_TABLE)
+        for idx in _CREATE_HISTORY_INDEXES:
+            conn.execute(idx)
+        conn.execute(_CREATE_PREFERENCES_TABLE)
         conn.commit()
         logger.info("auth_db_initialized path=%s", self._db_path)
 
@@ -128,11 +163,18 @@ class AuthManager:
             role = Role(role)
         now = time.time()
         conn = self._get_conn()
+        # 邮箱唯一性检查（空邮箱不校验）
+        if email and email.strip():
+            existing = conn.execute(
+                "SELECT id FROM users WHERE email = ? AND email != ''", (email.strip(),)
+            ).fetchone()
+            if existing:
+                raise ValueError(f"邮箱 {email} 已被其他用户使用")
         try:
             conn.execute(
                 """INSERT INTO users (username, email, password, role, status, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (username, email, self._hash_password(password), role.value, UserStatus.ACTIVE.value, now, now),
+                (username, email.strip(), self._hash_password(password), role.value, UserStatus.ACTIVE.value, now, now),
             )
             conn.commit()
         except sqlite3.IntegrityError:
@@ -161,8 +203,15 @@ class AuthManager:
         params: list[Any] = []
 
         if email is not None:
+            if email and email.strip():
+                existing = conn.execute(
+                    "SELECT id FROM users WHERE email = ? AND username != ? AND email != ''",
+                    (email.strip(), username),
+                ).fetchone()
+                if existing:
+                    raise ValueError(f"邮箱 {email} 已被其他用户使用")
             updates.append("email = ?")
-            params.append(email)
+            params.append(email.strip())
         if password is not None:
             updates.append("password = ?")
             params.append(self._hash_password(password))
@@ -251,42 +300,48 @@ class AuthManager:
 
     # ─── Token ─────────────────────────────────────────────────
 
-    def login(self, username: str, password: str) -> str | None:
-        """验证密码并签发 Token（含登录限流 + 状态检查）"""
-        # 限流检查
+    def login(self, username: str, password: str, ip: str = "") -> str | None:
+        """验证密码并签发 Token（含登录限流 + 状态检查 + 登录历史）"""
+        # 限流检查（含自动清理过期记录）
+        now = time.time()
+        expired = [u for u, (_, t) in self._failed_attempts.items() if now - t >= self.LOCKOUT_DURATION]
+        for u in expired:
+            del self._failed_attempts[u]
+
         if username in self._failed_attempts:
             count, first_time = self._failed_attempts[username]
-            if count >= self.MAX_FAILED and time.time() - first_time < self.LOCKOUT_DURATION:
-                remaining = int(self.LOCKOUT_DURATION - (time.time() - first_time))
+            if count >= self.MAX_FAILED and now - first_time < self.LOCKOUT_DURATION:
+                remaining = int(self.LOCKOUT_DURATION - (now - first_time))
                 logger.warning("login_locked username=%s remaining=%ds", username, remaining)
                 return None
-            if time.time() - first_time >= self.LOCKOUT_DURATION:
-                del self._failed_attempts[username]
 
         user = self.get_user(username)
         if not user or not self.verify_password(password, user.password_hash):
             count, _ = self._failed_attempts.get(username, (0, time.time()))
             self._failed_attempts[username] = (count + 1, time.time())
+            self.record_login(username, ip, success=False, reason="密码错误")
             return None
 
         # 状态检查
         if not user.is_active:
             logger.warning("login_disabled username=%s", username)
+            self.record_login(username, ip, success=False, reason="账户已禁用")
             return None
 
         self._failed_attempts.pop(username, None)
         token = secrets.token_urlsafe(32)
         expiry = time.time() + self.TOKEN_EXPIRY
         with self._lock:
-            self._tokens[username] = (token, expiry)
-        logger.info("user_logged_in username=%s", username)
+            self._tokens[username] = (token, ip, expiry)
+        self.record_login(username, ip, success=True, reason="")
+        logger.info("user_logged_in username=%s ip=%s", username, ip)
         return token
 
     def verify_token(self, token: str) -> User | None:
         """验证 Token 并返回用户（常数时间比较 + 状态检查）"""
         now = time.time()
         with self._lock:
-            for username, (stored_token, expiry) in list(self._tokens.items()):
+            for username, (stored_token, _ip, expiry) in list(self._tokens.items()):
                 if expiry < now:
                     self._tokens.pop(username, None)
                     continue
@@ -309,6 +364,199 @@ class AuthManager:
     def require_role(self, user: User, role: Role) -> bool:
         role_order = {Role.ADMIN: 3, Role.OPERATOR: 2, Role.VIEWER: 1}
         return role_order.get(user.role, 0) >= role_order.get(role, 0)
+
+    # ─── 登录历史 ──────────────────────────────────────────────
+
+    def record_login(self, username: str, ip: str, success: bool, reason: str = "") -> None:
+        """写入登录历史记录（写入失败不影响主流程）"""
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                """INSERT INTO login_history (username, ip, success, reason, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (username, ip, 1 if success else 0, reason, time.time()),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.warning("login_history_write_failed username=%s error=%s", username, e)
+
+    def get_login_history(self, username: str, limit: int = 20) -> list[dict[str, Any]]:
+        """查询某用户的登录历史（最近 N 条）"""
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM login_history WHERE username = ? ORDER BY created_at DESC LIMIT ?",
+            (username, limit),
+        ).fetchall()
+        return [
+            {
+                "id": r["id"],
+                "username": r["username"],
+                "ip": r["ip"],
+                "success": bool(r["success"]),
+                "reason": r["reason"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    # ─── 会话管理 ──────────────────────────────────────────────
+
+    def list_active_sessions(self) -> list[dict[str, Any]]:
+        """列出所有活跃 Token 会话"""
+        now = time.time()
+        sessions: list[dict[str, Any]] = []
+        with self._lock:
+            for username, (_token, ip, expiry) in list(self._tokens.items()):
+                if expiry > now:
+                    sessions.append({
+                        "username": username,
+                        "ip": ip,
+                        "expires_at": expiry,
+                        "remaining_seconds": int(expiry - now),
+                    })
+        return sessions
+
+    def revoke_sessions(self, username: str) -> bool:
+        """撤销某用户的所有 Token（强制下线）"""
+        with self._lock:
+            removed = self._tokens.pop(username, None) is not None
+        if removed:
+            logger.info("session_revoked username=%s", username)
+        return removed
+
+    # ─── 统计 ──────────────────────────────────────────────────
+
+    def get_user_stats(self) -> dict[str, Any]:
+        """用户统计：总数、角色分布、启用/禁用数"""
+        conn = self._get_conn()
+        total = conn.execute("SELECT COUNT(*) AS cnt FROM users").fetchone()["cnt"]
+        by_role = {}
+        for row in conn.execute(
+            "SELECT role, COUNT(*) as cnt FROM users GROUP BY role"
+        ).fetchall():
+            by_role[row["role"]] = row["cnt"]
+        active = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM users WHERE status = ?", (UserStatus.ACTIVE.value,)
+        ).fetchone()["cnt"]
+        now = time.time()
+        with self._lock:
+            online = sum(
+                1 for _u, (_t, _ip, e) in self._tokens.items() if e > now
+            )
+        return {
+            "total_users": total,
+            "by_role": by_role,
+            "active_count": active,
+            "disabled_count": total - active,
+            "online_count": online,
+        }
+
+    # ─── 通知偏好 ──────────────────────────────────────────────
+
+    def _init_preferences(self, username: str) -> None:
+        """为新用户创建默认偏好设置"""
+        conn = self._get_conn()
+        conn.execute(
+            """INSERT OR IGNORE INTO user_preferences (username, updated_at)
+               VALUES (?, ?)""",
+            (username, time.time()),
+        )
+        conn.commit()
+
+    def get_preferences(self, username: str) -> dict[str, Any]:
+        """获取用户通知偏好"""
+        self._init_preferences(username)
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT * FROM user_preferences WHERE username = ?", (username,)
+        ).fetchone()
+        if not row:
+            return self._default_preferences()
+        import json as _json
+        return {
+            "notify_alert": {
+                "enabled": bool(row["notify_alert_enabled"]),
+                "channels": _json.loads(row["notify_alert_channels"]),
+            },
+            "notify_system": {
+                "enabled": bool(row["notify_system_enabled"]),
+                "channels": _json.loads(row["notify_system_channels"]),
+            },
+            "notify_daily": {
+                "enabled": bool(row["notify_daily_enabled"]),
+                "channels": _json.loads(row["notify_daily_channels"]),
+            },
+        }
+
+    def update_preferences(self, username: str, prefs: dict[str, Any]) -> dict[str, Any]:
+        """更新用户通知偏好"""
+        import json as _json
+        conn = self._get_conn()
+        self._init_preferences(username)
+
+        sets: list[str] = []
+        params: list[Any] = []
+
+        for key, col in [
+            ("notify_alert", "notify_alert"),
+            ("notify_system", "notify_system"),
+            ("notify_daily", "notify_daily"),
+        ]:
+            entry = prefs.get(key)
+            if isinstance(entry, dict):
+                if "enabled" in entry:
+                    sets.append(f"{col}_enabled = ?")
+                    params.append(1 if entry["enabled"] else 0)
+                if "channels" in entry:
+                    sets.append(f"{col}_channels = ?")
+                    params.append(_json.dumps(entry["channels"], ensure_ascii=False))
+
+        if sets:
+            sets.append("updated_at = ?")
+            params.append(time.time())
+            params.append(username)
+            conn.execute(
+                f"UPDATE user_preferences SET {', '.join(sets)} WHERE username = ?",
+                params,
+            )
+            conn.commit()
+
+        return self.get_preferences(username)
+
+    @staticmethod
+    def _default_preferences() -> dict[str, Any]:
+        return {
+            "notify_alert": {"enabled": True, "channels": ["webhook"]},
+            "notify_system": {"enabled": True, "channels": ["webhook"]},
+            "notify_daily": {"enabled": False, "channels": ["webhook"]},
+        }
+
+    # ─── 用户详情（含统计）──────────────────────────────────
+
+    def get_user_detail(self, username: str) -> dict[str, Any] | None:
+        """获取用户完整信息：基本信息 + 统计 + 偏好 + 安全"""
+        user = self.get_user(username)
+        if not user:
+            return None
+
+        history = self.get_login_history(username, limit=1)
+        last_login = history[0] if history else None
+
+        sessions = self.list_active_sessions()
+        user_sessions = [s for s in sessions if s["username"] == username]
+
+        prefs = self.get_preferences(username)
+
+        return {
+            **user.to_dict(),
+            "last_login": {
+                "ip": last_login["ip"] if last_login else "",
+                "time": last_login["created_at"] if last_login else 0,
+                "success": last_login["success"] if last_login else False,
+            } if last_login else None,
+            "active_sessions": len(user_sessions),
+            "preferences": prefs,
+        }
 
 
 def _safe_str(row: dict, key: str, default: str) -> str:

@@ -29,6 +29,10 @@
         <el-icon><UserFilled /></el-icon>
         <template #title>用户管理</template>
       </el-menu-item>
+      <el-menu-item index="/rules">
+        <el-icon><List /></el-icon>
+        <template #title>规则</template>
+      </el-menu-item>
       <el-menu-item index="/system">
         <el-icon><Monitor /></el-icon>
         <template #title>系统</template>
@@ -49,7 +53,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { DataBoard, Bell, VideoCamera, Monitor, Film, UserFilled, Fold, Expand } from '@element-plus/icons-vue'
+import { DataBoard, Bell, VideoCamera, Monitor, Film, UserFilled, Fold, Expand, List } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const authStore = useAuthStore()

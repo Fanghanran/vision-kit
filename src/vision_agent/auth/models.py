@@ -59,3 +59,35 @@ class User:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+
+
+@dataclass
+class LoginHistoryEntry:
+    """登录历史记录"""
+
+    id: int = 0
+    username: str = ""
+    ip: str = ""
+    success: bool = True
+    reason: str = ""  # 失败原因，仅失败时有值
+    created_at: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "username": self.username,
+            "ip": self.ip,
+            "success": self.success,
+            "reason": self.reason,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class ActiveSession:
+    """活跃会话信息"""
+
+    username: str = ""
+    ip: str = ""
+    expires_at: float = 0.0
+    remaining_seconds: int = 0

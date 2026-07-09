@@ -1,0 +1,41 @@
+# 区域闯入检测（示例模板）
+# 复制本文件并去掉 .example 后缀，修改参数后自动热加载生效
+
+name: "example_zone_intrusion"
+
+description: "当指定类型的物体进入多边形区域时触发告警"
+
+conditions:
+  - type: object_in_zone
+    params:
+      # 多边形顶点坐标 [[x1,y1], [x2,y2], ...]，至少 3 个点
+      zone: [[100, 200], [300, 200], [300, 400], [100, 400]]
+      # 目标类别，null 表示检测所有类别
+      target_classes: ["person"]
+
+# 适用摄像头 ID 列表，null 表示全部摄像头
+camera_ids: ["cam_01"]
+
+# 告警严重级别
+severity: warning
+
+# 冷却时间（秒）：同一规则+摄像头在冷却期内只触发一次
+cooldown: 300
+
+# 滑动窗口大小：连续 N 帧触发才放行（防抖动）
+window_size: 5
+
+# 时间窗口：仅在指定时间段内生效
+time_windows:
+  - start: "08:00"
+    end: "18:00"
+    days: [0, 1, 2, 3, 4]  # 周一至周五
+
+# 触发后执行的动作
+actions:
+  - type: record_clip
+  - type: llm_analyze
+  - type: notify
+
+# 是否启用（false 则规则加载但不评估）
+enabled: false

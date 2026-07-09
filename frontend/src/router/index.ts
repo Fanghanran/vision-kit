@@ -58,6 +58,12 @@ const router = createRouter({
       component: () => import('@/views/Users.vue'),
       meta: { requiresAuth: true, requireAdmin: true },
     },
+    {
+      path: '/rules',
+      name: 'Rules',
+      component: () => import('@/views/Rules.vue'),
+      meta: { requiresAuth: true },
+    },
   ],
 })
 

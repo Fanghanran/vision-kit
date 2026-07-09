@@ -408,10 +408,10 @@ def validate_camera_config(
         if not video_path:
             result.add_error("camera.video_path 不能为空（source_type=video）")
 
-    # camera.fps
-    fps = camera.get("fps", 5)
-    if fps is not None and (not isinstance(fps, int) or not (1 <= fps <= 30)):
-        result.add_warning(f"camera.fps 不在 1-30 范围，使用默认值 5: {fps}")
+    # camera.fps（0 表示自动检测）
+    fps = camera.get("fps", 0)
+    if fps is not None and (not isinstance(fps, int) or not (0 <= fps <= 60)):
+        result.add_warning(f"camera.fps 不在 0-60 范围，使用默认值 0（自动检测）: {fps}")
 
     return result
 

@@ -1,0 +1,28 @@
+# 计数线穿越检测（示例模板）
+# 复制本文件并去掉 .example 后缀，修改参数后自动热加载生效
+
+name: "example_count_line"
+
+description: "统计穿越指定线段的目标数量，达到阈值时触发告警"
+
+conditions:
+  - type: count_line
+    params:
+      # 线段起点和终点
+      line_start: [100, 300]
+      line_end: [500, 300]
+      # 累计达到此数量后触发告警
+      threshold: 10
+      # 目标类别
+      target_classes: ["person"]
+
+camera_ids: ["cam_01"]
+
+severity: info
+
+cooldown: 600
+
+actions:
+  - type: notify
+
+enabled: false

@@ -17,6 +17,8 @@ Web API 模块 — HTTP REST API + WebSocket 实时推送
 
 from __future__ import annotations
 
+from vision_agent.core.types import CameraStatus
+
 import hmac
 import logging
 import re
@@ -177,7 +179,12 @@ def create_app(
 
     # ─── 健康检查 ────────────────────────────────────────────
 
-    @app.get("/health")
+    @app.get("/health",
+        tags=["系统"],
+        summary="系统健康检查",
+        description="返回系统运行状态：GPU 使用率、推理延迟 P50/P99、在线摄像头数量、今日告警数等。",
+        responses={200: {"description": "正常运行"}, 503: {"description": "系统不健康"}},
+    )
     async def health() -> Any:
         if pipeline:
             h = pipeline.health()
@@ -203,7 +210,11 @@ def create_app(
 
     # ─── 摄像头状态 ──────────────────────────────────────────
 
-    @app.get("/api/cameras")
+    @app.get("/api/cameras",
+        tags=["摄像头"],
+        summary="摄像头状态列表",
+        description="返回所有摄像头的实时状态：连接状态、FPS、告警数、队列深度等。",
+    )
     async def list_cameras() -> Any:
         if not pipeline:
             return []
@@ -252,17 +263,21 @@ def create_app(
         except OSError:
             pass
 
-    @app.post("/api/cameras/{camera_id}/toggle")
+    @app.post("/api/cameras/{camera_id}/toggle",
+        tags=["摄像头"],
+        summary="开关摄像头",
+        description="在线则停止采集，离线则启动采集。",
+        responses={200: {"description": "操作成功"}, 404: {"description": "摄像头不存在"}},
+    )
     async def toggle_camera(camera_id: str) -> Any:
-        """开关摄像头：在线则停止，离线则启动"""
         if not _ID_PATTERN.match(camera_id):
-            raise HTTPException(status_code=400, detail="invalid camera_id")
+            raise HTTPException(status_code=400, detail="摄像头ID不合法")
         if not pipeline:
-            raise HTTPException(status_code=404, detail="Pipeline not available")
+            raise HTTPException(status_code=404, detail="系统未启动")
 
         cam_thread = pipeline.get_camera_thread(camera_id)
         if not cam_thread:
-            raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+            raise HTTPException(status_code=404, detail=f"摄像头 {camera_id} 不存在")
 
         if cam_thread.is_alive():
             cam_thread.stop()
@@ -271,23 +286,27 @@ def create_app(
             cam_thread.start()
             return {"camera_id": camera_id, "action": "started", "status": "connecting"}
 
-    @app.post("/api/cameras")
+    @app.post("/api/cameras",
+        tags=["摄像头"],
+        summary="添加摄像头",
+        description="添加一路新摄像头。source_type 支持 rtsp/video/test，fps=0 自动检测。配置自动持久化到 configs/cameras/。",
+        responses={200: {"description": "创建成功"}, 400: {"description": "参数错误"}, 409: {"description": "摄像头已存在"}},
+    )
     async def create_camera(body: dict[str, Any] = Body(...)) -> Any:
-        """添加新摄像头"""
         if not pipeline:
-            raise HTTPException(status_code=404, detail="Pipeline not available")
+            raise HTTPException(status_code=404, detail="系统未启动")
 
         from vision_agent.core.camera import CameraConfig
 
         camera_id = body.get("id", "")
         if not camera_id:
-            raise HTTPException(status_code=400, detail="Missing id field")
+            raise HTTPException(status_code=400, detail="缺少摄像头ID")
         if not _ID_PATTERN.match(camera_id):
-            raise HTTPException(status_code=400, detail="invalid id (allowed: letters, digits, -, _)")
+            raise HTTPException(status_code=400, detail="ID 格式不合法（仅允许字母、数字、-、_）")
 
         # 检查是否已存在
         if pipeline.get_camera_thread(camera_id):
-            raise HTTPException(status_code=409, detail=f"Camera {camera_id} already exists")
+            raise HTTPException(status_code=409, detail=f"摄像头 {camera_id} 已存在")
 
         resolution = body.get("resolution", [640, 640])
         width = max(320, min(resolution[0] if resolution else 640, 4096))
@@ -309,17 +328,69 @@ def create_app(
 
         return {"camera_id": camera_id, "action": "created"}
 
-    @app.delete("/api/cameras/{camera_id}")
-    async def delete_camera(camera_id: str) -> Any:
-        """删除摄像头"""
+    @app.put("/api/cameras/{camera_id}",
+        tags=["摄像头"],
+        summary="更新摄像头配置",
+        description="修改摄像头参数（来源/帧率/分辨率等），停旧线程→改配置→启新线程→写YAML持久化。",
+        responses={200: {"description": "更新成功"}, 404: {"description": "摄像头不存在"}},
+    )
+    async def update_camera(camera_id: str, body: dict[str, Any] = Body(...)) -> Any:
         if not _ID_PATTERN.match(camera_id):
-            raise HTTPException(status_code=400, detail="invalid camera_id")
+            raise HTTPException(status_code=400, detail="摄像头ID不合法")
         if not pipeline:
-            raise HTTPException(status_code=404, detail="Pipeline not available")
+            raise HTTPException(status_code=404, detail="系统未启动")
 
         cam_thread = pipeline.get_camera_thread(camera_id)
         if not cam_thread:
-            raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
+            raise HTTPException(status_code=404, detail=f"摄像头 {camera_id} 不存在")
+
+        from vision_agent.core.camera import CameraConfig
+
+        # 先停旧线程
+        was_alive = cam_thread.is_alive()
+        if was_alive:
+            cam_thread.stop()
+
+        # 用新参数重建 CameraConfig
+        resolution = body.get("resolution", [640, 640])
+        width = max(320, min(resolution[0] if resolution else 640, 4096))
+        height = max(240, min(resolution[1] if len(resolution) > 1 else 640, 4096))
+        new_config = CameraConfig(
+            camera_id=camera_id,
+            camera_name=body.get("name", cam_thread.camera_name),
+            rtsp_url=body.get("rtsp_url", ""),
+            source_type=body.get("source_type", "rtsp"),
+            video_path=body.get("video_path", ""),
+            fps=body.get("fps", 0),
+            width=width,
+            height=height,
+        )
+
+        # 重载摄像头
+        fps = body.get("fps", 0)
+        pipeline.reload_camera(new_config, fps)
+
+        # 持久化
+        _save_camera_yaml(camera_id, body)
+
+        action = "reloaded_and_started" if was_alive else "reloaded"
+        return {"camera_id": camera_id, "action": action}
+
+    @app.delete("/api/cameras/{camera_id}",
+        tags=["摄像头"],
+        summary="删除摄像头",
+        description="停止摄像头并删除内存线程和 YAML 配置文件。",
+        responses={200: {"description": "删除成功"}, 404: {"description": "摄像头不存在"}},
+    )
+    async def delete_camera(camera_id: str) -> Any:
+        if not _ID_PATTERN.match(camera_id):
+            raise HTTPException(status_code=400, detail="摄像头ID不合法")
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="系统未启动")
+
+        cam_thread = pipeline.get_camera_thread(camera_id)
+        if not cam_thread:
+            raise HTTPException(status_code=404, detail=f"摄像头 {camera_id} 不存在")
 
         pipeline.remove_camera(camera_id)
 
@@ -328,9 +399,58 @@ def create_app(
 
         return {"camera_id": camera_id, "action": "deleted"}
 
+    @app.get("/api/cameras/stats",
+        tags=["摄像头"],
+        summary="摄像头统计",
+        description="返回在线/离线/告警中/总计数量。",
+    )
+    async def camera_stats() -> Any:
+        if not pipeline:
+            return {"total": 0, "online": 0, "offline": 0, "alerting": 0}
+        states = pipeline.get_camera_states()
+        total = len(states)
+        online = sum(1 for s in states.values() if s.status == CameraStatus.CONNECTED)
+        offline = sum(1 for s in states.values() if s.status in (CameraStatus.DISCONNECTED, CameraStatus.ERROR))
+        alerting = sum(1 for s in states.values() if s.total_alerts > 0)
+        return {"total": total, "online": online, "offline": offline, "alerting": alerting}
+
+    @app.get("/api/cameras/{camera_id}",
+        tags=["摄像头"],
+        summary="摄像头详情",
+        description="返回单个摄像头的完整信息：配置 + 运行指标。",
+        responses={200: {"description": "成功"}, 404: {"description": "摄像头不存在"}},
+    )
+    async def get_camera_detail(camera_id: str) -> Any:
+        if not _ID_PATTERN.match(camera_id):
+            raise HTTPException(status_code=400, detail="摄像头ID不合法")
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="系统未启动")
+        cam_thread = pipeline.get_camera_thread(camera_id)
+        if not cam_thread:
+            raise HTTPException(status_code=404, detail=f"摄像头 {camera_id} 不存在")
+        state = cam_thread.camera_state
+        return {
+            "camera_id": state.camera_id,
+            "camera_name": cam_thread.camera_name,
+            "status": state.status.value,
+            "source_type": cam_thread.source_type,
+            "fps": state.current_fps,
+            "queue_size": state.queue_size,
+            "total_detections": state.total_detections,
+            "total_alerts": state.total_alerts,
+            "uptime_seconds": state.uptime_seconds,
+            "error_message": state.error_message,
+            "rtsp_url": _RTSP_PATTERN.sub(r"\1:***@", cam_thread.rtsp_url),
+            "resolution": [cam_thread.width, cam_thread.height],
+        }
+
     # ─── 告警列表 ────────────────────────────────────────────
 
-    @app.get("/api/alerts")
+    @app.get("/api/alerts",
+        tags=["告警"],
+        summary="告警列表（分页+筛选）",
+        description="分页查询告警，支持按状态/严重级别/摄像头/事件类型/时间范围筛选。",
+    )
     async def list_alerts(
         page: int = Query(1, ge=1),
         page_size: int = Query(20, ge=1, le=100),
@@ -378,13 +498,18 @@ def create_app(
 
     # ─── 告警详情 ────────────────────────────────────────────
 
-    @app.get("/api/alerts/{alert_id}")
+    @app.get("/api/alerts/{alert_id}",
+        tags=["告警"],
+        summary="告警详情",
+        description="获取单个告警的完整信息，包括 LLM 分析结果、截图和视频片段路径。",
+        responses={200: {"description": "成功"}, 404: {"description": "告警不存在"}},
+    )
     async def get_alert(alert_id: str) -> Any:
         if not database:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            raise HTTPException(status_code=404, detail="告警不存在")
         alert = database.get_alert(alert_id)
         if not alert:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            raise HTTPException(status_code=404, detail="告警不存在")
         # 扁平化响应，与列表端点一致
         event = alert.event
         return {
@@ -406,32 +531,42 @@ def create_app(
 
     # ─── 告警截图 ────────────────────────────────────────────
 
-    @app.get("/api/alerts/{alert_id}/snapshot")
+    @app.get("/api/alerts/{alert_id}/snapshot",
+        tags=["告警"],
+        summary="告警截图",
+        description="返回告警关联的 JPEG 截图文件。",
+        responses={200: {"description": "JPEG 图片"}, 404: {"description": "截图不存在"}},
+    )
     async def get_snapshot(alert_id: str) -> Any:
         if not database:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            raise HTTPException(status_code=404, detail="告警不存在")
         alert = database.get_alert(alert_id)
         if not alert or not alert.event.snapshot_path:
-            raise HTTPException(status_code=404, detail="Snapshot not found")
+            raise HTTPException(status_code=404, detail="截图不存在")
         path = Path(alert.event.snapshot_path)
         if not path.exists():
-            raise HTTPException(status_code=404, detail="Snapshot not found")
+            raise HTTPException(status_code=404, detail="截图不存在")
         return FileResponse(str(path), media_type="image/jpeg")
 
     # ─── 告警视频 ────────────────────────────────────────────
 
-    @app.get("/api/alerts/{alert_id}/clip")
+    @app.get("/api/alerts/{alert_id}/clip",
+        tags=["告警"],
+        summary="告警视频片段",
+        description="返回告警关联的 MP4 视频片段，可通过 download 参数控制浏览器下载或内联播放。",
+        responses={200: {"description": "MP4 视频"}, 404: {"description": "视频片段不存在"}},
+    )
     async def get_clip(
         alert_id: str, download: bool = False
     ) -> Any:
         if not database:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            raise HTTPException(status_code=404, detail="告警不存在")
         alert = database.get_alert(alert_id)
         if not alert or not alert.video_clip_path:
-            raise HTTPException(status_code=404, detail="Clip not found")
+            raise HTTPException(status_code=404, detail="视频片段不存在")
         path = Path(alert.video_clip_path)
         if not path.exists():
-            raise HTTPException(status_code=404, detail="Clip not found")
+            raise HTTPException(status_code=404, detail="视频片段不存在")
         headers = {"Content-Disposition": "attachment"} if download else {}
         return FileResponse(str(path), media_type="video/mp4", headers=headers)
 
@@ -442,30 +577,35 @@ def create_app(
         "acknowledged": {"resolved"},
     }
 
-    @app.put("/api/alerts/{alert_id}/status")
+    @app.put("/api/alerts/{alert_id}/status",
+        tags=["告警"],
+        summary="更新告警状态",
+        description="更新告警状态（pending→acknowledged→resolved，或 pending→rejected）。操作后通过 WebSocket 广播。",
+        responses={200: {"description": "更新成功"}, 400: {"description": "状态流转不合法"}, 404: {"description": "告警不存在"}},
+    )
     async def update_alert_status(
         alert_id: str,
         body: dict[str, Any] = Body(...),
     ) -> Any:
         if not database:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            raise HTTPException(status_code=404, detail="告警不存在")
 
         new_status = body.get("status")
         acknowledged_by = body.get("acknowledged_by", "")
 
         if not new_status:
-            raise HTTPException(status_code=400, detail="Missing status field")
+            raise HTTPException(status_code=400, detail="缺少状态字段")
 
         alert = database.get_alert(alert_id)
         if not alert:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            raise HTTPException(status_code=404, detail="告警不存在")
 
         current = alert.status.value
         allowed = _VALID_TRANSITIONS.get(current, set())
         if new_status not in allowed:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot transition from {current} to {new_status}",
+                detail=f"不能从 {current} 转为 {new_status}",
             )
 
         updates: dict[str, Any] = {"status": new_status}
@@ -505,7 +645,11 @@ def create_app(
 
     # ─── 统计 ────────────────────────────────────────────────
 
-    @app.get("/api/stats")
+    @app.get("/api/stats",
+        tags=["系统"],
+        summary="统计概览",
+        description="返回指定周期的告警统计：总数、按严重级别/状态/摄像头分布、系统运行时长。period 支持 today/7d/30d。",
+    )
     async def get_stats(
         period: str = "today",
     ) -> Any:
@@ -536,7 +680,11 @@ def create_app(
 
     # ─── 配置查看 ────────────────────────────────────────────
 
-    @app.get("/api/config")
+    @app.get("/api/config",
+        tags=["系统"],
+        summary="系统配置（脱敏）",
+        description="返回当前全局配置的快照，敏感字段（密码/API Key/Token）已脱敏处理。",
+    )
     async def get_config() -> Any:
         return sanitize_config(config)
 
@@ -573,33 +721,51 @@ def create_app(
             return user
         return checker
 
-    @app.post("/api/auth/login")
-    async def auth_login(body: dict[str, Any] = Body(...)) -> Any:
+    @app.post("/api/auth/login",
+        tags=["认证"],
+        summary="用户登录",
+        description="验证用户名和密码，返回 Bearer Token（24h 有效）。5 次失败后锁定 5 分钟。",
+        responses={200: {"description": "登录成功，返回 token 和用户信息"}, 401: {"description": "用户名或密码错误"}},
+    )
+    async def auth_login(request: Request, body: dict[str, Any] = Body(...)) -> Any:
         username = body.get("username", "")
         password = body.get("password", "")
         if not username or not password:
             raise HTTPException(status_code=400, detail="请输入用户名和密码")
-        token = auth_mgr.login(username, password)
+        # 获取客户端 IP
+        ip = request.client.host if request.client else ""
+        token = auth_mgr.login(username, password, ip=ip)
         if not token:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         user = auth_mgr.get_user(username)
         return {"token": token, "user": user.to_dict() if user else {"username": username, "role": "unknown"}}
 
-    @app.post("/api/auth/logout")
+    @app.post("/api/auth/logout",
+        tags=["认证"],
+        summary="退出登录",
+        description="使当前 Token 失效。",
+    )
     async def auth_logout(user: Any = Depends(_require_auth)) -> Any:
         auth_mgr.logout(user.username)
         return {"message": "已退出"}
 
-    @app.get("/api/auth/me")
+    @app.get("/api/auth/me",
+        tags=["认证"],
+        summary="当前用户信息",
+        description="返回当前登录用户的完整信息（用户名、角色、邮箱、头像色等）。",
+    )
     async def auth_me(user: Any = Depends(_require_auth)) -> Any:
         return user.to_dict()
 
-    @app.put("/api/auth/profile")
+    @app.put("/api/auth/profile",
+        tags=["认证"],
+        summary="更新个人资料",
+        description="修改当前用户的邮箱和头像背景色。",
+    )
     async def update_profile(
         body: dict[str, Any] = Body(...),
         user: Any = Depends(_require_auth),
     ) -> Any:
-        """更新个人资料（头像、邮箱）"""
         email = body.get("email")
         avatar_bg = body.get("avatar_bg")
         try:
@@ -612,7 +778,12 @@ def create_app(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.post("/api/auth/change-password")
+    @app.post("/api/auth/change-password",
+        tags=["认证"],
+        summary="修改密码",
+        description="验证旧密码后更新为新密码。",
+        responses={200: {"description": "密码已修改"}, 401: {"description": "旧密码错误"}},
+    )
     async def change_password(
         body: dict[str, Any] = Body(...),
         user: Any = Depends(_require_auth),
@@ -626,11 +797,65 @@ def create_app(
         auth_mgr.update_user(user.username, password=new_pw)
         return {"message": "密码已修改"}
 
-    @app.get("/api/users")
+    @app.get("/api/auth/me/detail",
+        tags=["认证"],
+        summary="个人信息详情",
+        description="返回当前用户的完整信息：基本资料 + 最后登录 + 活跃会话数 + 通知偏好。",
+    )
+    async def auth_me_detail(user: Any = Depends(_require_auth)) -> Any:
+        detail = auth_mgr.get_user_detail(user.username)
+        if not detail:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        return detail
+
+    @app.get("/api/auth/me/preferences",
+        tags=["认证"],
+        summary="通知偏好",
+        description="返回当前用户的通知偏好设置。",
+    )
+    async def auth_preferences(user: Any = Depends(_require_auth)) -> Any:
+        return auth_mgr.get_preferences(user.username)
+
+    @app.put("/api/auth/preferences",
+        tags=["认证"],
+        summary="更新通知偏好",
+        description="修改通知偏好设置（告警推送/系统通知/日报推送的启停和渠道）。",
+    )
+    async def update_preferences(
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_auth),
+    ) -> Any:
+        # 输入校验：只允许合法的 channel 值
+        ALLOWED_CHANNELS = {"webhook", "email"}
+        for key in body:
+            if isinstance(body[key], dict):
+                channels = body[key].get("channels")
+                if channels is not None:
+                    if not isinstance(channels, list):
+                        raise HTTPException(status_code=422, detail=f"{key}.channels 必须是字符串数组")
+                    for ch in channels:
+                        if not isinstance(ch, str) or ch not in ALLOWED_CHANNELS:
+                            raise HTTPException(status_code=422, detail=f"非法渠道: {ch}")
+                enabled = body[key].get("enabled")
+                if enabled is not None and not isinstance(enabled, bool):
+                    raise HTTPException(status_code=422, detail=f"{key}.enabled 必须是布尔值")
+        return auth_mgr.update_preferences(user.username, body)
+
+    @app.get("/api/users",
+        tags=["用户管理"],
+        summary="用户列表（仅管理员）",
+        description="返回所有用户的列表，需要管理员权限。",
+        responses={200: {"description": "用户列表"}, 403: {"description": "权限不足"}},
+    )
     async def list_users(user: Any = Depends(_require_role(Role.ADMIN))) -> Any:
         return auth_mgr.list_users()
 
-    @app.post("/api/users")
+    @app.post("/api/users",
+        tags=["用户管理"],
+        summary="创建用户（仅管理员）",
+        description="创建新用户，指定用户名、密码、角色（admin/operator/viewer）和可选邮箱。",
+        responses={200: {"description": "创建成功"}, 400: {"description": "参数错误"}, 409: {"description": "用户名已存在"}},
+    )
     async def create_user(
         body: dict[str, Any] = Body(...),
         user: Any = Depends(_require_role(Role.ADMIN)),
@@ -646,13 +871,17 @@ def create_app(
         except ValueError as e:
             raise HTTPException(status_code=409, detail=str(e))
 
-    @app.put("/api/users/{username}")
+    @app.put("/api/users/{username}",
+        tags=["用户管理"],
+        summary="编辑用户（仅管理员）",
+        description="修改用户信息：邮箱、密码、角色、状态（0=正常,1=禁用）、头像色。未传入的字段不修改。",
+        responses={200: {"description": "更新成功"}, 400: {"description": "用户不存在"}},
+    )
     async def update_user(
         username: str,
         body: dict[str, Any] = Body(...),
         user: Any = Depends(_require_role(Role.ADMIN)),
     ) -> Any:
-        """管理员编辑用户信息"""
         try:
             return auth_mgr.update_user(
                 username,
@@ -665,7 +894,12 @@ def create_app(
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-    @app.delete("/api/users/{username}")
+    @app.delete("/api/users/{username}",
+        tags=["用户管理"],
+        summary="删除用户（仅管理员）",
+        description="删除指定用户。默认 admin 不可删除。",
+        responses={200: {"description": "删除成功"}, 400: {"description": "不能删除默认管理员"}, 404: {"description": "用户不存在"}},
+    )
     async def delete_user(
         username: str,
         user: Any = Depends(_require_role(Role.ADMIN)),
@@ -677,6 +911,65 @@ def create_app(
             detail = str(e)
             status = 404 if "不存在" in detail else 400
             raise HTTPException(status_code=status, detail=detail)
+
+    # ─── 用户管理：统计 / 会话 / 登录历史 ──────────────────────
+
+    @app.get("/api/users/stats",
+        tags=["用户管理"],
+        summary="用户统计",
+        description="返回用户总数、角色分布、启用/禁用数、在线数。需要管理员权限。",
+    )
+    async def user_stats(user: Any = Depends(_require_role(Role.ADMIN))) -> Any:
+        if not auth_mgr:
+            raise HTTPException(status_code=404, detail="认证系统未加载")
+        return auth_mgr.get_user_stats()
+
+    @app.get("/api/users/{username}/sessions",
+        tags=["用户管理"],
+        summary="活跃会话",
+        description="列出指定用户的所有活跃 Token 会话。本人或管理员可查。",
+    )
+    async def user_sessions(
+        username: str,
+        user: Any = Depends(_require_auth),
+    ) -> Any:
+        if not auth_mgr:
+            raise HTTPException(status_code=404, detail="认证系统未加载")
+        # 本人或管理员
+        if user.username != username and not auth_mgr.require_role(user, Role.ADMIN):
+            raise HTTPException(status_code=403, detail="权限不足")
+        sessions = auth_mgr.list_active_sessions()
+        return [s for s in sessions if s["username"] == username]
+
+    @app.delete("/api/users/{username}/sessions",
+        tags=["用户管理"],
+        summary="强制下线",
+        description="撤销指定用户的所有 Token 会话。需要管理员权限。",
+    )
+    async def revoke_sessions(
+        username: str,
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        if not auth_mgr:
+            raise HTTPException(status_code=404, detail="认证系统未加载")
+        ok = auth_mgr.revoke_sessions(username)
+        return {"message": f"用户 {username} 已强制下线" if ok else f"用户 {username} 无活跃会话"}
+
+    @app.get("/api/users/{username}/login-history",
+        tags=["用户管理"],
+        summary="登录历史",
+        description="返回指定用户最近的登录历史记录。本人或管理员可查。",
+    )
+    async def login_history(
+        username: str,
+        user: Any = Depends(_require_auth),
+        limit: int = Query(20, ge=1, le=100),
+    ) -> Any:
+        if not auth_mgr:
+            raise HTTPException(status_code=404, detail="认证系统未加载")
+        if user.username != username and not auth_mgr.require_role(user, Role.ADMIN):
+            raise HTTPException(status_code=403, detail="权限不足")
+        return auth_mgr.get_login_history(username, limit)
 
     # ─── WebSocket ────────────────────────────────────────────
 
@@ -708,7 +1001,9 @@ def create_app(
 
     ws_manager = WSManager()
 
-    @app.websocket("/ws")
+    @app.websocket("/ws",
+        name="事件推送 WebSocket",
+    )
     async def websocket_endpoint(ws: WebSocket) -> None:
         await ws_manager.connect(ws)
         try:
@@ -830,7 +1125,12 @@ def create_app(
 
     # ─── 回放 API ──────────────────────────────────────────────
 
-    @app.get("/api/cameras/{camera_id}/replay")
+    @app.get("/api/cameras/{camera_id}/replay",
+        tags=["监控"],
+        summary="历史录像回放",
+        description="返回指定时间范围内的录像 MP4 文件。start/end 为 Unix 时间戳（秒）。",
+        responses={200: {"description": "MP4 视频文件"}, 404: {"description": "未找到录像"}},
+    )
     async def camera_replay(
         camera_id: str,
         start: float = Query(..., description="起始时间戳（Unix 秒）"),
@@ -840,15 +1140,15 @@ def create_app(
         import re as _re
 
         if not _re.match(r"^[\w\-]+$", camera_id):
-            raise HTTPException(status_code=400, detail="invalid camera_id")
+            raise HTTPException(status_code=400, detail="摄像头ID不合法")
         if not pipeline:
-            raise HTTPException(status_code=404, detail="Pipeline not available")
+            raise HTTPException(status_code=404, detail="系统未启动")
 
         from pathlib import Path
 
         clip_dir = Path("data/clips") / camera_id
         if not clip_dir.exists():
-            raise HTTPException(status_code=404, detail="No recordings found")
+            raise HTTPException(status_code=404, detail="没有找到录像文件")
 
         clips = sorted(clip_dir.glob("*.mp4"))
         for clip_path in clips:
@@ -866,9 +1166,14 @@ def create_app(
             except (ValueError, IndexError):
                 continue
 
-        raise HTTPException(status_code=404, detail="No recording in specified time range")
+        raise HTTPException(status_code=404, detail="指定时间范围内没有录像")
 
-    @app.get("/api/cameras/{camera_id}/timeline")
+    @app.get("/api/cameras/{camera_id}/timeline",
+        tags=["监控"],
+        summary="录像时间轴",
+        description="返回指定日期有录像的时间段列表，用于时间轴高亮。date 格式为 YYYY-MM-DD。",
+        responses={200: {"description": "时间段列表"}, 400: {"description": "日期格式错误"}},
+    )
     async def camera_timeline(
         camera_id: str,
         date: str = Query(..., description="日期 YYYY-MM-DD"),
@@ -878,7 +1183,7 @@ def create_app(
         from datetime import datetime, timezone
 
         if not _re.match(r"^[\w\-]+$", camera_id):
-            raise HTTPException(status_code=400, detail="invalid camera_id")
+            raise HTTPException(status_code=400, detail="摄像头ID不合法")
 
         # 先校验日期格式
         try:
@@ -887,7 +1192,7 @@ def create_app(
             ).timestamp()
             day_end = day_start + 86400
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format")
+            raise HTTPException(status_code=400, detail="日期格式不正确")
 
         from pathlib import Path
 
@@ -915,6 +1220,18 @@ def create_app(
                 continue
 
         return {"camera_id": camera_id, "date": date, "segments": segments}
+
+    # ─── 规则管理 API ──────────────────────────────────────────
+
+    try:
+        from vision_agent.web.api.rules import create_router as create_rules_router
+
+        rules_router = create_rules_router(auth_dependency=_require_auth)
+        if rules_router is not None:
+            app.include_router(rules_router)
+            logger.info("rules_api_mounted")
+    except Exception as e:
+        logger.warning("rules_api_failed error=%s", e)
 
     # ─── 广播接口（供 pipeline 调用）──────────────────────────
 

@@ -1,7 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import * as alertsApi from '@/api/alerts'
-import type { Alert, AlertListResponse, AlertFilters } from '@/api/types'
+import type { Alert, AlertFilters } from '@/api/types'
+import { ElMessage } from 'element-plus'
+
+function userMessage(e: any, defaultMsg: string): string {
+  const status = e?.response?.status
+  const detail = e?.response?.data?.detail || ''
+  if (status === 404) return '告警不存在'
+  if (status === 400 && detail) return detail
+  return defaultMsg
+}
 
 export const useAlertsStore = defineStore('alerts', () => {
   const alerts = ref<Alert[]>([])
@@ -34,18 +43,17 @@ export const useAlertsStore = defineStore('alerts', () => {
   async function updateAlertStatus(id: string, status: string, by = '') {
     try {
       const updated = await alertsApi.updateAlertStatus(id, status, by)
-      // 更新列表中的对应项
       const idx = alerts.value.findIndex((a) => a.alert_id === id)
       if (idx >= 0) alerts.value[idx] = updated
+      ElMessage.success({ pending: '待处理', acknowledged: '已确认', rejected: '已标误报', resolved: '已解决' }[status] || '已更新')
       return updated
-    } catch (e) {
-      console.error('updateAlertStatus failed:', e)
+    } catch (e: any) {
+      ElMessage.error(userMessage(e, '操作失败'))
       throw e
     }
   }
 
   function addRealtimeAlert(raw: any) {
-    // 规范化：兼容嵌套（event.*）和扁平两种格式
     const alert: Alert = {
       alert_id: raw.alert_id || '',
       event_type: raw.event_type || raw.event?.event_type || '',

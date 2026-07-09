@@ -145,3 +145,88 @@ class TestReplayTimeline:
     def test_replay_invalid_camera_id(self, client):
         resp = client.get("/api/cameras/bad id/replay", params={"start": 0, "end": 1})
         assert resp.status_code == 400
+
+
+# ═══════════════════════════════════════════════════════════════
+# 摄像头统计 API — GET /api/cameras/stats
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestCameraStats:
+    """GET /api/cameras/stats — 返回在线/离线/告警中/总计数量"""
+
+    def test_stats_no_pipeline_returns_zeros(self):
+        """无 pipeline 时 stats 端点返回全零值（不依赖 pipeline）"""
+        app = create_app(database=None, pipeline=None, config={})
+        client = TestClient(app)
+        resp = client.get("/api/cameras/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data == {"total": 0, "online": 0, "offline": 0, "alerting": 0}
+
+    def test_stats_with_camera(self, client, pipeline):
+        """有摄像头时 stats 返回正确的统计计数"""
+        config = CameraConfig(
+            camera_id="stats_cam", camera_name="统计摄像头",
+            source_type="test", fps=10,
+        )
+        pipeline.add_camera(config)
+        resp = client.get("/api/cameras/stats")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] >= 1
+        # 新添加的摄像头默认处于 CONNECTING 状态
+        assert "online" in data
+        assert "offline" in data
+        assert "alerting" in data
+
+
+# ═══════════════════════════════════════════════════════════════
+# 摄像头详情 API — GET /api/cameras/{camera_id}
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestCameraDetail:
+    """GET /api/cameras/{camera_id} — 返回单路摄像头完整信息"""
+
+    def test_detail_returns_full_info(self, client, pipeline):
+        """详情端点返回 source_type、resolution、rtsp_url 等完整字段"""
+        config = CameraConfig(
+            camera_id="detail_cam",
+            camera_name="详情摄像头",
+            source_type="rtsp",
+            rtsp_url="rtsp://192.168.1.100:554/stream1",
+            fps=15,
+            width=1920,
+            height=1080,
+        )
+        pipeline.add_camera(config)
+        resp = client.get("/api/cameras/detail_cam")
+        assert resp.status_code == 200
+        data = resp.json()
+        # 基本信息
+        assert data["camera_id"] == "detail_cam"
+        assert data["status"] in ("connecting", "connected", "disconnected", "error")
+        # source_type（新接口特有字段）
+        assert data["source_type"] == "rtsp"
+        # resolution（新接口特有字段）
+        assert data["resolution"] == [1920, 1080]
+        # rtsp_url（新接口特有字段）
+        assert data["rtsp_url"] == "rtsp://192.168.1.100:554/stream1"
+        # 运行指标
+        assert "fps" in data
+        assert "queue_size" in data
+        assert "total_detections" in data
+        assert "total_alerts" in data
+        assert "uptime_seconds" in data
+        assert "error_message" in data
+
+    def test_detail_not_found(self, client):
+        """GET /api/cameras/{id} 不存在的摄像头返回 404"""
+        resp = client.get("/api/cameras/nonexistent_camera")
+        assert resp.status_code == 404
+
+    def test_detail_invalid_id(self, client):
+        """GET /api/cameras/{id} 非法 ID 返回 400"""
+        resp = client.get("/api/cameras/bad id")
+        assert resp.status_code == 400

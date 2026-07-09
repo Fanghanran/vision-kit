@@ -29,7 +29,7 @@
           </div>
         </div>
       </div>
-      <div class="brand-footer">© 2026 Vision Agent · 方瀚然</div>
+      <div class="brand-footer">© 2026 Vision Agent</div>
     </div>
 
     <!-- 右侧登录区 -->
@@ -81,10 +81,6 @@
             <el-icon><WarningFilled /></el-icon> {{ error }}
           </p>
         </transition>
-
-        <div class="login-hint">
-          默认账户：admin / admin123
-        </div>
       </div>
     </div>
   </div>
