@@ -148,7 +148,7 @@ class RuleManager:
         """
         result: dict[str, Any] = {"valid": True, "errors": [], "rule_type": "", "params": {}}
 
-        name = config.get("name", "(未命名)")
+        _name = config.get("name", "(未命名)")
 
         # 1. 校验
         try:

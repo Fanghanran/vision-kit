@@ -12,9 +12,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from fastapi import APIRouter
 
 logger = logging.getLogger(__name__)
 
