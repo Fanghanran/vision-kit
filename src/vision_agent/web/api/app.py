@@ -212,6 +212,46 @@ def create_app(
 
     _ID_PATTERN = re.compile(r"^[\w\-]+$")
 
+    def _save_camera_yaml(camera_id: str, body: dict[str, Any]) -> None:
+        """将摄像头配置写回 configs/cameras/{camera_id}.yaml"""
+        from pathlib import Path
+
+        try:
+            import yaml
+        except ImportError:
+            return
+
+        cam_dir = Path("configs/cameras")
+        cam_dir.mkdir(parents=True, exist_ok=True)
+        cam_file = cam_dir / f"{camera_id}.yaml"
+
+        # 构造 YAML 结构
+        resolution = body.get("resolution", [640, 640])
+        cfg = {
+            "camera": {
+                "id": camera_id,
+                "name": body.get("name", camera_id),
+                "source_type": body.get("source_type", "rtsp"),
+                "rtsp_url": body.get("rtsp_url", ""),
+                "video_path": body.get("video_path", ""),
+                "fps": body.get("fps", 0),
+                "resolution": resolution,
+            }
+        }
+        cam_file.write_text(yaml.dump(cfg, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+        logger.info("camera_yaml_saved camera=%s file=%s", camera_id, cam_file)
+
+    def _delete_camera_yaml(camera_id: str) -> None:
+        """删除 configs/cameras/{camera_id}.yaml"""
+        from pathlib import Path
+
+        cam_file = Path("configs/cameras") / f"{camera_id}.yaml"
+        try:
+            cam_file.unlink(missing_ok=True)
+            logger.info("camera_yaml_deleted camera=%s file=%s", camera_id, cam_file)
+        except OSError:
+            pass
+
     @app.post("/api/cameras/{camera_id}/toggle")
     async def toggle_camera(camera_id: str) -> Any:
         """开关摄像头：在线则停止，离线则启动"""
@@ -263,6 +303,10 @@ def create_app(
             height=height,
         )
         pipeline.add_camera(cam_config, fps=body.get("fps", 0))
+
+        # 持久化到 YAML 文件
+        _save_camera_yaml(camera_id, body)
+
         return {"camera_id": camera_id, "action": "created"}
 
     @app.delete("/api/cameras/{camera_id}")
@@ -278,6 +322,10 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found")
 
         pipeline.remove_camera(camera_id)
+
+        # 删除对应的 YAML 文件
+        _delete_camera_yaml(camera_id)
+
         return {"camera_id": camera_id, "action": "deleted"}
 
     # ─── 告警列表 ────────────────────────────────────────────
