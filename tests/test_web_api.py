@@ -1,6 +1,8 @@
 """Web API 测试 — 健康检查/告警/统计/白名单"""
 
 import logging
+import os
+import tempfile
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -64,8 +66,27 @@ class FakePipeline:
 def client():
     db = FakeDatabase()
     pipeline = FakePipeline()
+
+    # 创建临时 auth db 并获取 admin token
+    from vision_agent.auth.manager import get_auth_manager
+
+    get_auth_manager.__globals__["_auth_manager"] = None
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        auth_db = f.name
+    auth_mgr = get_auth_manager(db_path=auth_db)
+    token = auth_mgr.login("admin", "admin123")
+
     app = create_app(database=db, pipeline=pipeline, config={})
-    return TestClient(app)
+    tc = TestClient(app)
+    tc.headers["Authorization"] = f"Bearer {token}"
+
+    yield tc
+
+    get_auth_manager.__globals__["_auth_manager"] = None
+    try:
+        os.unlink(auth_db)
+    except OSError:
+        pass
 
 
 # ─── 健康检查 ─────────────────────────────────────────────

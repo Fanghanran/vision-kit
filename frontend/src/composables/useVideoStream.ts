@@ -31,8 +31,9 @@ export function useVideoStream(cameraId: string) {
     if (ws && ws.readyState === WebSocket.OPEN) return
     intentionalClose = false
 
+    const token = localStorage.getItem('va-token') || ''
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${protocol}//${location.host}/ws/video/${cameraId}`
+    const url = `${protocol}//${location.host}/ws/video/${cameraId}?token=${encodeURIComponent(token)}`
 
     try {
       ws = new WebSocket(url)

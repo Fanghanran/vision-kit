@@ -1,5 +1,6 @@
 """摄像头管理 API 集成测试 — toggle/create/delete/list"""
 
+import os
 import tempfile
 
 import pytest
@@ -55,8 +56,26 @@ def pipeline():
 
 @pytest.fixture
 def client(pipeline):
+    # 创建临时 auth db 并获取 admin token
+    from vision_agent.auth.manager import get_auth_manager
+
+    get_auth_manager.__globals__["_auth_manager"] = None
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        auth_db = f.name
+    auth_mgr = get_auth_manager(db_path=auth_db)
+    token = auth_mgr.login("admin", "admin123")
+
     app = create_app(database=None, pipeline=pipeline, config={})
-    return TestClient(app)
+    tc = TestClient(app)
+    tc.headers["Authorization"] = f"Bearer {token}"
+
+    yield tc
+
+    get_auth_manager.__globals__["_auth_manager"] = None
+    try:
+        os.unlink(auth_db)
+    except OSError:
+        pass
 
 
 class TestListCameras:
@@ -157,12 +176,27 @@ class TestCameraStats:
 
     def test_stats_no_pipeline_returns_zeros(self):
         """无 pipeline 时 stats 端点返回全零值（不依赖 pipeline）"""
+        from vision_agent.auth.manager import get_auth_manager
+
+        get_auth_manager.__globals__["_auth_manager"] = None
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            auth_db = f.name
+        auth_mgr = get_auth_manager(db_path=auth_db)
+        token = auth_mgr.login("admin", "admin123")
+
         app = create_app(database=None, pipeline=None, config={})
         client = TestClient(app)
+        client.headers["Authorization"] = f"Bearer {token}"
         resp = client.get("/api/cameras/stats")
         assert resp.status_code == 200
         data = resp.json()
         assert data == {"total": 0, "online": 0, "offline": 0, "alerting": 0}
+
+        get_auth_manager.__globals__["_auth_manager"] = None
+        try:
+            os.unlink(auth_db)
+        except OSError:
+            pass
 
     def test_stats_with_camera(self, client, pipeline):
         """有摄像头时 stats 返回正确的统计计数"""

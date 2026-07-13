@@ -15,8 +15,9 @@ export function useWebSocket() {
   function connect() {
     if (ws && ws.readyState === WebSocket.OPEN) return
 
+    const token = localStorage.getItem('va-token') || ''
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const url = `${protocol}//${location.host}/ws`
+    const url = `${protocol}//${location.host}/ws?token=${encodeURIComponent(token)}`
 
     try {
       ws = new WebSocket(url)

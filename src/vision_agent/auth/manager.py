@@ -67,6 +67,22 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 )
 """
 
+_CREATE_ACTIVE_TOKENS_TABLE = """
+CREATE TABLE IF NOT EXISTS active_tokens (
+    token       TEXT PRIMARY KEY,
+    username    TEXT NOT NULL,
+    ip          TEXT DEFAULT '',
+    expires_at  REAL NOT NULL,
+    created_at  REAL NOT NULL,
+    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+)
+"""
+
+_CREATE_ACTIVE_TOKENS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_active_tokens_username ON active_tokens(username)",
+    "CREATE INDEX IF NOT EXISTS idx_active_tokens_expires ON active_tokens(expires_at)",
+]
+
 
 def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
     """让 SQLite 返回字典而非元组"""
@@ -79,7 +95,7 @@ class AuthManager:
     功能：
     - 用户 CRUD（SQLite 持久化）
     - 密码 PBKDF2-HMAC-SHA256 哈希
-    - Token 生成 / 校验（内存）
+    - Token 生成 / 校验（SQLite 持久化，支持多设备同时登录）
     - 登录限流 + 权限检查
     - 默认管理员自动创建
     """
@@ -93,7 +109,6 @@ class AuthManager:
     def __init__(self, db_path: str | Path = "data/auth.db") -> None:
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._tokens: dict[str, tuple[str, str, float]] = {}  # username → (token, ip, expiry)
         self._failed_attempts: dict[str, tuple[int, float]] = {}
         self._lock = threading.Lock()
 
@@ -123,6 +138,9 @@ class AuthManager:
         for idx in _CREATE_HISTORY_INDEXES:
             conn.execute(idx)
         conn.execute(_CREATE_PREFERENCES_TABLE)
+        conn.execute(_CREATE_ACTIVE_TOKENS_TABLE)
+        for idx in _CREATE_ACTIVE_TOKENS_INDEXES:
+            conn.execute(idx)
         conn.commit()
         logger.info("auth_db_initialized path=%s", self._db_path)
 
@@ -239,16 +257,21 @@ class AuthManager:
         return self._row_to_user(row).to_dict()
 
     def delete_user(self, username: str) -> None:
-        """删除用户"""
+        """删除用户（原子事务：同时清理 token）"""
         if username == self.DEFAULT_ADMIN:
             raise ValueError("不能删除默认管理员")
         conn = self._get_conn()
-        cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
-        conn.commit()
-        if cur.rowcount == 0:
-            raise ValueError(f"用户 {username} 不存在")
-        with self._lock:
-            self._tokens.pop(username, None)
+        try:
+            conn.execute("BEGIN")
+            cur = conn.execute("DELETE FROM users WHERE username = ?", (username,))
+            if cur.rowcount == 0:
+                conn.execute("ROLLBACK")
+                raise ValueError(f"用户 {username} 不存在")
+            conn.execute("DELETE FROM active_tokens WHERE username = ?", (username,))
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
         logger.info("user_deleted username=%s", username)
 
     def get_user(self, username: str) -> User | None:
@@ -331,30 +354,64 @@ class AuthManager:
         self._failed_attempts.pop(username, None)
         token = secrets.token_urlsafe(32)
         expiry = time.time() + self.TOKEN_EXPIRY
-        with self._lock:
-            self._tokens[username] = (token, ip, expiry)
+        now = time.time()
+
+        # 持久化到 SQLite（支持多设备同时登录）
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT INTO active_tokens (token, username, ip, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+            (token, username, ip, expiry, now),
+        )
+        conn.commit()
+
+        # 概率触发过期 token 清理（约 1% 概率）
+        if secrets.randbelow(100) < 1:
+            self._cleanup_expired_tokens()
+
         self.record_login(username, ip, success=True, reason="")
         logger.info("user_logged_in username=%s ip=%s", username, ip)
         return token
 
     def verify_token(self, token: str) -> User | None:
-        """验证 Token 并返回用户（常数时间比较 + 状态检查）"""
+        """验证 Token 并返回用户（SQLite 持久化查询）"""
         now = time.time()
-        with self._lock:
-            for username, (stored_token, _ip, expiry) in list(self._tokens.items()):
-                if expiry < now:
-                    self._tokens.pop(username, None)
-                    continue
-                if secrets.compare_digest(stored_token, token):
-                    user = self.get_user(username)
-                    if user and user.is_active:
-                        return user
-                    return None
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT username, expires_at FROM active_tokens WHERE token = ?", (token,)
+        ).fetchone()
+        if row:
+            if row["expires_at"] > now:
+                user = self.get_user(row["username"])
+                if user and user.is_active:
+                    return user
+            else:
+                # 惰性清理过期 token
+                conn.execute("DELETE FROM active_tokens WHERE token = ?", (token,))
+                conn.commit()
+            return None
         return None
 
+    def logout_by_token(self, token: str) -> None:
+        """单设备登出：删除指定 token"""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM active_tokens WHERE token = ?", (token,))
+        conn.commit()
+
     def logout(self, username: str) -> None:
-        with self._lock:
-            self._tokens.pop(username, None)
+        """按用户名登出（强制下线场景：删除该用户全部 token）"""
+        conn = self._get_conn()
+        conn.execute("DELETE FROM active_tokens WHERE username = ?", (username,))
+        conn.commit()
+
+    def _cleanup_expired_tokens(self) -> int:
+        """清理过期 token，返回删除数量"""
+        conn = self._get_conn()
+        cur = conn.execute("DELETE FROM active_tokens WHERE expires_at < ?", (time.time(),))
+        conn.commit()
+        count = cur.rowcount
+        if count > 0:
+            logger.debug("expired_tokens_cleaned count=%d", count)
+        return count
 
     # ─── 权限 ──────────────────────────────────────────────────
 
@@ -402,27 +459,32 @@ class AuthManager:
     # ─── 会话管理 ──────────────────────────────────────────────
 
     def list_active_sessions(self) -> list[dict[str, Any]]:
-        """列出所有活跃 Token 会话"""
+        """列出所有活跃 Token 会话（从持久化表查询）"""
         now = time.time()
-        sessions: list[dict[str, Any]] = []
-        with self._lock:
-            for username, (_token, ip, expiry) in list(self._tokens.items()):
-                if expiry > now:
-                    sessions.append({
-                        "username": username,
-                        "ip": ip,
-                        "expires_at": expiry,
-                        "remaining_seconds": int(expiry - now),
-                    })
-        return sessions
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT token, username, ip, expires_at FROM active_tokens WHERE expires_at > ?",
+            (now,),
+        ).fetchall()
+        return [
+            {
+                "token": r["token"][:8] + "...",
+                "username": r["username"],
+                "ip": r["ip"],
+                "expires_at": r["expires_at"],
+                "remaining_seconds": int(r["expires_at"] - now),
+            }
+            for r in rows
+        ]
 
     def revoke_sessions(self, username: str) -> bool:
         """撤销某用户的所有 Token（强制下线）"""
-        with self._lock:
-            removed = self._tokens.pop(username, None) is not None
-        if removed:
-            logger.info("session_revoked username=%s", username)
-        return removed
+        conn = self._get_conn()
+        cur = conn.execute("DELETE FROM active_tokens WHERE username = ?", (username,))
+        conn.commit()
+        if cur.rowcount > 0:
+            logger.info("sessions_revoked username=%s count=%d", username, cur.rowcount)
+        return cur.rowcount > 0
 
     # ─── 统计 ──────────────────────────────────────────────────
 
@@ -438,11 +500,12 @@ class AuthManager:
         active = conn.execute(
             "SELECT COUNT(*) AS cnt FROM users WHERE status = ?", (UserStatus.ACTIVE.value,)
         ).fetchone()["cnt"]
+        # 在线数从持久化 token 表查
         now = time.time()
-        with self._lock:
-            online = sum(
-                1 for _u, (_t, _ip, e) in self._tokens.items() if e > now
-            )
+        online = conn.execute(
+            "SELECT COUNT(DISTINCT username) AS cnt FROM active_tokens WHERE expires_at > ?",
+            (now,),
+        ).fetchone()["cnt"]
         return {
             "total_users": total,
             "by_role": by_role,

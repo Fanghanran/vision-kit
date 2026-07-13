@@ -177,6 +177,59 @@ def create_app(
 
     app.add_middleware(PathWhitelistMiddleware)
 
+    # ─── 认证基础设施（必须在业务端点之前定义）─────────────────────
+
+    from vision_agent.auth.manager import get_auth_manager
+    from vision_agent.auth.models import PERMISSIONS, Role, UserStatus
+
+    auth_mgr = get_auth_manager()
+
+    def _get_token_from_header(request: Request) -> str:
+        """从 Authorization header 提取 Bearer token"""
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:].strip()
+        return ""
+
+    def _get_current_user(request: Request) -> Any:
+        """从请求头提取 Token 并验证用户"""
+        token = _get_token_from_header(request)
+        if token:
+            user = auth_mgr.verify_token(token)
+            if user:
+                return user
+        return None
+
+    def _require_auth(request: Request) -> Any:
+        """要求认证，未登录或已禁用返回 401/403"""
+        user = _get_current_user(request)
+        if not user:
+            raise HTTPException(status_code=401, detail="请先登录")
+        if user.status == UserStatus.DISABLED:
+            raise HTTPException(status_code=403, detail="账号已被禁用")
+        return user
+
+    def _require_role(*roles: Role):
+        """要求特定角色"""
+        def checker(request: Request) -> Any:
+            user = _require_auth(request)
+            if not any(auth_mgr.require_role(user, r) for r in roles):
+                raise HTTPException(status_code=403, detail="权限不足")
+            return user
+        return checker
+
+    def _require_permission(*permissions: str):
+        """要求特定权限（admin 拥有全部权限）"""
+        def checker(request: Request) -> Any:
+            user = _require_auth(request)
+            if user.role == Role.ADMIN:
+                return user
+            user_perms = PERMISSIONS.get(user.role, set())
+            if any(p in user_perms for p in permissions):
+                return user
+            raise HTTPException(status_code=403, detail="权限不足")
+        return checker
+
     # ─── 健康检查 ────────────────────────────────────────────
 
     @app.get("/health",
@@ -215,7 +268,7 @@ def create_app(
         summary="摄像头状态列表",
         description="返回所有摄像头的实时状态：连接状态、FPS、告警数、队列深度等。",
     )
-    async def list_cameras() -> Any:
+    async def list_cameras(user: Any = Depends(_require_permission("view:cameras"))) -> Any:
         if not pipeline:
             return []
         states = pipeline.get_camera_states()
@@ -314,7 +367,10 @@ def create_app(
         description="在线则停止采集，离线则启动采集。",
         responses={200: {"description": "操作成功"}, 404: {"description": "摄像头不存在"}},
     )
-    async def toggle_camera(camera_id: str) -> Any:
+    async def toggle_camera(
+        camera_id: str,
+        user: Any = Depends(_require_permission("control:cameras")),
+    ) -> Any:
         if not _ID_PATTERN.match(camera_id):
             raise HTTPException(status_code=400, detail="摄像头ID不合法")
         if not pipeline:
@@ -337,7 +393,10 @@ def create_app(
         description="添加一路新摄像头。source_type 支持 rtsp/video/test，fps=0 自动检测。配置自动持久化到 configs/cameras/。",
         responses={200: {"description": "创建成功"}, 400: {"description": "参数错误"}, 409: {"description": "摄像头已存在"}},
     )
-    async def create_camera(body: dict[str, Any] = Body(...)) -> Any:
+    async def create_camera(
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_permission("control:cameras")),
+    ) -> Any:
         if not pipeline:
             raise HTTPException(status_code=404, detail="系统未启动")
 
@@ -379,7 +438,11 @@ def create_app(
         description="修改摄像头参数（来源/帧率/分辨率等），停旧线程→改配置→启新线程→写YAML持久化。",
         responses={200: {"description": "更新成功"}, 404: {"description": "摄像头不存在"}},
     )
-    async def update_camera(camera_id: str, body: dict[str, Any] = Body(...)) -> Any:
+    async def update_camera(
+        camera_id: str,
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_permission("control:cameras")),
+    ) -> Any:
         if not _ID_PATTERN.match(camera_id):
             raise HTTPException(status_code=400, detail="摄像头ID不合法")
         if not pipeline:
@@ -427,7 +490,10 @@ def create_app(
         description="停止摄像头并删除内存线程和 YAML 配置文件。",
         responses={200: {"description": "删除成功"}, 404: {"description": "摄像头不存在"}},
     )
-    async def delete_camera(camera_id: str) -> Any:
+    async def delete_camera(
+        camera_id: str,
+        user: Any = Depends(_require_permission("control:cameras")),
+    ) -> Any:
         if not _ID_PATTERN.match(camera_id):
             raise HTTPException(status_code=400, detail="摄像头ID不合法")
         if not pipeline:
@@ -449,7 +515,7 @@ def create_app(
         summary="摄像头统计",
         description="返回在线/离线/告警中/总计数量。",
     )
-    async def camera_stats() -> Any:
+    async def camera_stats(user: Any = Depends(_require_permission("view:cameras"))) -> Any:
         if not pipeline:
             return {"total": 0, "online": 0, "offline": 0, "alerting": 0}
         states = pipeline.get_camera_states()
@@ -465,7 +531,10 @@ def create_app(
         description="返回单个摄像头的完整信息：配置 + 运行指标。",
         responses={200: {"description": "成功"}, 404: {"description": "摄像头不存在"}},
     )
-    async def get_camera_detail(camera_id: str) -> Any:
+    async def get_camera_detail(
+        camera_id: str,
+        user: Any = Depends(_require_permission("view:cameras")),
+    ) -> Any:
         if not _ID_PATTERN.match(camera_id):
             raise HTTPException(status_code=400, detail="摄像头ID不合法")
         if not pipeline:
@@ -505,6 +574,7 @@ def create_app(
         severity: str | None = None,
         start_time: float | None = None,
         end_time: float | None = None,
+        user: Any = Depends(_require_permission("view:alerts")),
     ) -> Any:
         if not database:
             return {"items": [], "total": 0, "page": page, "page_size": page_size}
@@ -549,7 +619,10 @@ def create_app(
         description="获取单个告警的完整信息，包括 LLM 分析结果、截图和视频片段路径。",
         responses={200: {"description": "成功"}, 404: {"description": "告警不存在"}},
     )
-    async def get_alert(alert_id: str) -> Any:
+    async def get_alert(
+        alert_id: str,
+        user: Any = Depends(_require_permission("view:alerts")),
+    ) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="告警不存在")
         alert = database.get_alert(alert_id)
@@ -582,7 +655,10 @@ def create_app(
         description="返回告警关联的 JPEG 截图文件。",
         responses={200: {"description": "JPEG 图片"}, 404: {"description": "截图不存在"}},
     )
-    async def get_snapshot(alert_id: str) -> Any:
+    async def get_snapshot(
+        alert_id: str,
+        user: Any = Depends(_require_permission("view:alerts")),
+    ) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="告警不存在")
         alert = database.get_alert(alert_id)
@@ -602,7 +678,9 @@ def create_app(
         responses={200: {"description": "MP4 视频"}, 404: {"description": "视频片段不存在"}},
     )
     async def get_clip(
-        alert_id: str, download: bool = False
+        alert_id: str,
+        download: bool = False,
+        user: Any = Depends(_require_permission("view:alerts")),
     ) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="告警不存在")
@@ -631,12 +709,13 @@ def create_app(
     async def update_alert_status(
         alert_id: str,
         body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_permission("manage:alerts")),
     ) -> Any:
         if not database:
             raise HTTPException(status_code=404, detail="告警不存在")
 
         new_status = body.get("status")
-        acknowledged_by = body.get("acknowledged_by", "")
+        actor = user.username
 
         if not new_status:
             raise HTTPException(status_code=400, detail="缺少状态字段")
@@ -656,10 +735,10 @@ def create_app(
         updates: dict[str, Any] = {"status": new_status}
         if new_status == "acknowledged":
             updates["acknowledged_at"] = time.time()
-            updates["acknowledged_by"] = acknowledged_by
+            updates["acknowledged_by"] = actor
         elif new_status == "rejected":
             updates["rejected_at"] = time.time()
-            updates["acknowledged_by"] = acknowledged_by
+            updates["acknowledged_by"] = actor
 
         database.update_alert(alert_id, updates)
 
@@ -669,7 +748,7 @@ def create_app(
                 "type": "alert_status",
                 "alert_id": alert_id,
                 "new_status": new_status,
-                "updated_by": acknowledged_by,
+                "updated_by": actor,
             }
         )
 
@@ -697,6 +776,7 @@ def create_app(
     )
     async def get_stats(
         period: str = "today",
+        user: Any = Depends(_require_permission("view:alerts")),
     ) -> Any:
         if not database:
             return {"period": period, "total_alerts": 0}
@@ -730,41 +810,10 @@ def create_app(
         summary="系统配置（脱敏）",
         description="返回当前全局配置的快照，敏感字段（密码/API Key/Token）已脱敏处理。",
     )
-    async def get_config() -> Any:
+    async def get_config(user: Any = Depends(_require_permission("manage:config"))) -> Any:
         return sanitize_config(config)
 
     # ─── 认证 API ──────────────────────────────────────────────
-
-    from vision_agent.auth.manager import get_auth_manager
-    from vision_agent.auth.models import Role
-
-    auth_mgr = get_auth_manager()
-
-    def _get_current_user(request: Request) -> Any:
-        """从请求头提取 Token 并验证用户"""
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            user = auth_mgr.verify_token(token)
-            if user:
-                return user
-        return None
-
-    def _require_auth(request: Request) -> Any:
-        """要求认证，未登录返回 401"""
-        user = _get_current_user(request)
-        if not user:
-            raise HTTPException(status_code=401, detail="请先登录")
-        return user
-
-    def _require_role(*roles: Role):
-        """要求特定角色"""
-        def checker(request: Request) -> Any:
-            user = _require_auth(request)
-            if not any(auth_mgr.require_role(user, r) for r in roles):
-                raise HTTPException(status_code=403, detail="权限不足")
-            return user
-        return checker
 
     @app.post("/api/auth/login",
         tags=["认证"],
@@ -790,8 +839,10 @@ def create_app(
         summary="退出登录",
         description="使当前 Token 失效。",
     )
-    async def auth_logout(user: Any = Depends(_require_auth)) -> Any:
-        auth_mgr.logout(user.username)
+    async def auth_logout(request: Request, _user: Any = Depends(_require_auth)) -> Any:
+        token = _get_token_from_header(request)
+        if token:
+            auth_mgr.logout_by_token(token)
         return {"message": "已退出"}
 
     @app.get("/api/auth/me",
@@ -1050,6 +1101,12 @@ def create_app(
         name="事件推送 WebSocket",
     )
     async def websocket_endpoint(ws: WebSocket) -> None:
+        # WebSocket 认证：从 query string 读取 token
+        token = ws.query_params.get("token", "")
+        user = auth_mgr.verify_token(token)
+        if not user:
+            await ws.close(code=4001, reason="认证失败")
+            return
         await ws_manager.connect(ws)
         try:
             while True:
@@ -1072,6 +1129,18 @@ def create_app(
         import re
         import struct
         import time as _time
+
+        # WebSocket 认证
+        token = ws.query_params.get("token", "")
+        user = auth_mgr.verify_token(token)
+        if not user:
+            await ws.close(code=4001, reason="认证失败")
+            return
+        # 权限检查：view:cameras
+        user_perms = PERMISSIONS.get(user.role, set())
+        if user.role != Role.ADMIN and "view:cameras" not in user_perms:
+            await ws.close(code=4003, reason="权限不足")
+            return
 
         # 路径遍历防护
         if not re.match(r"^[\w\-]+$", camera_id):
@@ -1142,6 +1211,7 @@ def create_app(
         camera_id: str,
         start: float = Query(..., description="起始时间戳（Unix 秒）"),
         end: float = Query(..., description="结束时间戳（Unix 秒）"),
+        user: Any = Depends(_require_permission("view:cameras")),
     ) -> Any:
         """返回指定时间段的录像 MP4 文件"""
         import re as _re
@@ -1184,6 +1254,7 @@ def create_app(
     async def camera_timeline(
         camera_id: str,
         date: str = Query(..., description="日期 YYYY-MM-DD"),
+        user: Any = Depends(_require_permission("view:cameras")),
     ) -> Any:
         """返回指定日期有录像的时间段列表"""
         import re as _re
