@@ -1,9 +1,11 @@
 """检测标注框画帧功能测试 — 帧上画框 + JPEG 编码 + 缓存获取"""
+import pytest
+
+pytest.importorskip("cv2", reason="需要 opencv-python-headless")
 
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from vision_agent.core.camera import CameraConfig, FrameData, FrameQueue
 from vision_agent.core.detector import DetectorConfig
