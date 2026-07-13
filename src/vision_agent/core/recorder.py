@@ -108,6 +108,19 @@ class ClipRecorder:
 
     # ─── 公开接口 ──────────────────────────────────────────────
 
+    def hot_update_config(self, updates: dict[str, Any]) -> None:
+        """运行时更新配置（热加载用，强制类型转换）"""
+        for key, value in updates.items():
+            if hasattr(self._config, key):
+                old = getattr(self._config, key)
+                try:
+                    setattr(self._config, key, type(old)(value))
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "hot_update_config_invalid_type key=%s value=%s expected=%s",
+                        key, value, type(old).__name__,
+                    )
+
     def push_frame(self, camera_id: str, frame: np.ndarray, timestamp: float) -> None:
         """将帧推入指定摄像头的环形缓冲"""
         if not self._config.enabled:

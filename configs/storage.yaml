@@ -1,0 +1,10 @@
+# 存储配置
+storage:
+  type: sqlite
+  path: data/vision_agent.db
+
+redis:
+  enabled: false
+  host: localhost
+  port: 6379
+  db: 0

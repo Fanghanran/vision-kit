@@ -1,0 +1,8 @@
+# 系统基础配置
+system:
+  name: "Vision Agent"
+  log_level: INFO
+  log_dir: logs
+  log_max_size_mb: 50
+  log_backup_count: 5
+  data_dir: data

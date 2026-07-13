@@ -1,0 +1,13 @@
+# 通知渠道配置
+notification:
+  webhook:
+    enabled: true
+    url: ${WEBHOOK_URL}
+    timeout: 10
+  email:
+    enabled: false
+    smtp_host: smtp.example.com
+    smtp_port: 465
+    username: ${EMAIL_USER}
+    password: ${EMAIL_PASS}
+    to: ["admin@example.com"]

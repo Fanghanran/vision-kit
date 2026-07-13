@@ -43,7 +43,7 @@ def client(tmp_path):
     """创建 TestClient，规则写入临时目录，无认证要求"""
     rules_dir = tmp_path / "test_rules"
     rules_dir.mkdir()
-    mgr = RuleManager(rules_dir=str(rules_dir))
+    mgr = RuleManager(rules_file=str(rules_dir / "rules.yaml"))
 
     # Patch 模块级单例 _rule_manager，使 create_router 使用 temp dir 的 manager
     import vision_agent.web.api.rules as rules_mod

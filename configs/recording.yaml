@@ -1,0 +1,11 @@
+# 录制配置
+recording:
+  buffer_duration: 30
+  output_dir: data/clips
+  snapshot_dir: data/snapshots
+  retention_days: 7
+  max_disk_gb: 100
+
+# 保留快照和剪辑过期规则（兼容 system 段的旧字段）
+snapshot_retention_days: 30
+clip_retention_days: 7

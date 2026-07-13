@@ -48,8 +48,6 @@ logger = logging.getLogger(__name__)
 
 # ─── 异常（统一定义在 core/exceptions.py）────────────────────
 
-from vision_agent.core.exceptions import ConfigError, StartupError  # noqa: E402, F401
-
 
 # ─── 未实现模块的 Protocol 桩 ────────────────────────────────
 # 这些接口在对应模块实现后会被替换，pipeline 通过 Protocol 解耦
@@ -306,6 +304,8 @@ class InferenceThread:
         self._total_frames = 0
         self._consecutive_failures: dict[str, int] = {}
         self._latency_tracker = LatencyTracker()
+        self._latest_detections: dict[str, list[Detection]] = {}  # camera_id → 最新检测结果
+        self._last_frame_jpeg: dict[str, tuple[bytes, int]] = {}  # camera_id → (JPEG, frame_id)
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -403,12 +403,62 @@ class InferenceThread:
                 inference_latency_ms=inference_ms,
             )
             self._result_queue.put(result)
+            # 缓存最新检测（供视频推流画框用）
+            self._latest_detections[bf.camera_id] = detections
 
-        # 5. 帧推送到录制器
+            # 5. 在当前帧上画框 + 编码 JPEG 缓存（供视频推流，帧框同步）
+            jpeg = self._draw_and_encode(bf.frame, detections, bf.camera_id)
+            with self._lock:
+                self._last_frame_jpeg[bf.camera_id] = (jpeg, bf.frame_id)
+
+        # 6. 帧推送到录制器
         for bf in batch:
             self._recorder.push_frame(bf.camera_id, bf.frame, bf.timestamp)
 
         self._total_frames += len(batch)
+
+    # ─── 画框与编码 ─────────────────────────────────────────
+
+    def _draw_and_encode(self, frame: np.ndarray,
+                         detections: list[Detection],
+                         camera_id: str = "") -> bytes:
+        """在帧上画检测框并编码为 JPEG（通用逻辑，自动根据类别分配颜色）"""
+        try:
+            import cv2
+        except ImportError:
+            return b""
+
+        if not detections:
+            dets: list[Detection] = []
+        elif not isinstance(detections, list):
+            # 兼容 mock 返回单个 Detection 的场景
+            dets = [detections] if hasattr(detections, "bbox") else []
+        else:
+            dets = detections
+
+        annotated = frame.copy()
+        class_colors: dict[str, tuple] = {}
+        for d in dets:
+            cls = d.class_name
+            if cls not in class_colors:
+                h = (hash(cls) % 180)
+                color = cv2.cvtColor(np.uint8([[[h, 220, 200]]]),
+                                     cv2.COLOR_HSV2BGR)[0][0]
+                class_colors[cls] = (int(color[0]), int(color[1]), int(color[2]))
+            color = class_colors[cls]
+            b = d.bbox
+            label = f"{cls} {d.confidence:.2f}"
+            cv2.rectangle(annotated, (int(b.x1), int(b.y1)), (int(b.x2), int(b.y2)), color, 2)
+            cv2.putText(annotated, label, (int(b.x1), int(b.y1) - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+        ok, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        return buf.tobytes() if ok else b""
+
+    def get_last_jpeg(self, camera_id: str) -> "tuple[bytes, int] | None":
+        """获取指定摄像头最新带框帧的 (JPEG bytes, frame_id)"""
+        with self._lock:
+            return self._last_frame_jpeg.get(camera_id)
 
 
 # ─── 处理线程 ────────────────────────────────────────────────
@@ -447,6 +497,10 @@ class ActionThread:
         self._total_alerts = 0
         self._llm_calls = 0
         self._llm_successes = 0
+
+        # 通知偏好缓存（60秒刷新）
+        self._prefs_cache: dict | None = None
+        self._prefs_cache_time: float = 0.0
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -545,13 +599,23 @@ class ActionThread:
                     "llm_analyze_error event=%s error=%s", event.event_id, str(e)
                 )
 
-        # 通知（构造 Alert 对象传递给 notifier）
+        # 通知（按 admin 偏好决定是否发送）
         alert = Alert(event=event)
+        prefs = self._get_admin_preferences()
         for notifier in self._notifiers:
+            ch = getattr(notifier, "name", "")
             try:
-                notifier.execute(alert, snapshot_path)
+                should_send = self._should_notify(prefs, "alert", ch)
             except Exception as e:
-                logger.error("notify_error event=%s error=%s", event.event_id, str(e))
+                logger.warning("prefs_check_error channel=%s event=%s error=%s", ch, event.event_id, str(e))
+                should_send = True  # 偏好检查失败 → 发送（宁可多报不漏报）
+            if should_send:
+                try:
+                    notifier.execute(alert, snapshot_path)
+                except Exception as e:
+                    logger.error("notify_error channel=%s event=%s error=%s", ch, event.event_id, str(e))
+            else:
+                logger.debug("notify_skipped channel=%s event=%s reason=preference", ch, event.event_id)
 
         self._total_alerts += 1
         logger.info(
@@ -570,6 +634,39 @@ class ActionThread:
                 logger.warning(
                     "alert_callback_error event=%s error=%s", event.event_id, str(e)
                 )
+
+    # ─── 通知偏好 ────────────────────────────────────────────
+
+    def _get_admin_preferences(self) -> dict[str, Any]:
+        """读取 admin 用户的偏好作为系统通知策略（缓存 60 秒）"""
+        now = time.time()
+        if self._prefs_cache is not None and (now - self._prefs_cache_time) < 60:
+            return self._prefs_cache
+        try:
+            from vision_agent.auth.manager import get_auth_manager
+
+            mgr = get_auth_manager()
+            prefs = mgr.get_preferences("admin")
+            self._prefs_cache = prefs
+            self._prefs_cache_time = now
+            return prefs
+        except Exception:
+            # 异常时也设缓存（短过期），避免高频重试风暴
+            fallback = {
+                "notify_alert": {"enabled": True, "channels": ["webhook"]},
+                "notify_system": {"enabled": True, "channels": ["webhook"]},
+                "notify_daily": {"enabled": False, "channels": ["webhook"]},
+            }
+            self._prefs_cache = fallback
+            self._prefs_cache_time = now  # 10 秒后重试
+            return fallback
+
+    def _should_notify(self, prefs: dict[str, Any], notify_type: str, channel: str) -> bool:
+        """检查某类通知是否应通过指定渠道发送"""
+        cfg = prefs.get(f"notify_{notify_type}")
+        if not isinstance(cfg, dict):
+            cfg = {"enabled": True, "channels": ["webhook"]}  # 损坏数据→默认发送
+        return bool(cfg.get("enabled", True)) and channel in cfg.get("channels", [])
 
 
 # ─── 定时任务 ────────────────────────────────────────────────
@@ -836,6 +933,60 @@ class VisionAgent:
         self._set_status(SystemStatus.STOPPED)
         logger.info("system_stopped")
 
+    def hot_update(self, path: str, value: Any) -> None:
+        """热加载：将配置变更推送到运行组件"""
+        if path == "detector.confidence":
+            self._detector.set_confidence(float(value))
+            logger.info("hot_update detector.confidence=%s", value)
+        elif path == "detector.iou_threshold":
+            self._detector.set_iou_threshold(float(value))
+            logger.info("hot_update detector.iou_threshold=%s", value)
+        elif path == "detector.input_size":
+            self._detector.set_input_size(int(value))
+            logger.info("hot_update detector.input_size=%s", value)
+        elif path in ("recording.retention_days", "recording.snapshot_retention_days"):
+            self._recorder.hot_update_config({path.split(".")[1]: value})
+            logger.info("hot_update %s=%s", path, value)
+        elif path.startswith("notification."):
+            self._rebuild_notifiers()
+            logger.info("hot_update notification rebuilt")
+
+    def _rebuild_notifiers(self) -> None:
+        """从全局配置重建通知器"""
+        try:
+            from vision_agent.actions.notifier import (
+                WebhookConfig, WebhookNotifier,
+                EmailConfig, EmailNotifier,
+            )
+
+            new_notifiers: list[NotifierProtocol] = []
+            webhook_cfg = self._global_config.get("notification", {}).get("webhook", {})
+            if webhook_cfg.get("enabled") and webhook_cfg.get("url"):
+                new_notifiers.append(WebhookNotifier(WebhookConfig(
+                    type=webhook_cfg.get("type", "wechat"),
+                    url=webhook_cfg["url"],
+                    max_retries=webhook_cfg.get("max_retries", 2),
+                    timeout=webhook_cfg.get("timeout", 10),
+                )))
+            email_cfg = self._global_config.get("notification", {}).get("email", {})
+            if email_cfg.get("enabled") and email_cfg.get("smtp_host"):
+                new_notifiers.append(EmailNotifier(EmailConfig(
+                    smtp_host=email_cfg["smtp_host"],
+                    smtp_port=email_cfg.get("smtp_port", 465),
+                    smtp_user=email_cfg.get("username", ""),
+                    smtp_pass=email_cfg.get("password", ""),
+                    to_addrs=email_cfg.get("recipients", []),
+                )))
+            # 更新 ActionThread 的 notifiers
+            self._action_thread._notifiers = new_notifiers
+            self._notifiers = new_notifiers
+        except Exception as e:
+            logger.error("rebuild_notifiers_failed error=%s", str(e))
+
+    def _set_config_reference(self, global_config: dict[str, Any]) -> None:
+        """注入全局配置引用，供热加载组件读取"""
+        self._global_config = global_config
+
     @property
     def status(self) -> SystemStatus:
         return self._status
@@ -898,6 +1049,16 @@ class VisionAgent:
         )
 
     # ─── 摄像头状态 ────────────────────────────────────────────
+
+    def get_last_frame_jpeg(self, camera_id: str) -> "tuple[bytes, int] | None":
+        """返回 (JPEG_bytes, frame_id) — 推理完成后已画好框，帧框同步"""
+        inf = self._inference_thread
+        return inf.get_last_jpeg(camera_id) if inf and inf.is_alive() else None
+
+    def get_latest_detections(self, camera_id: str) -> list[Detection]:
+        """获取指定摄像头的最新检测结果"""
+        inf = self._inference_thread
+        return inf._latest_detections.get(camera_id, []) if inf else []
 
     def get_camera_thread(self, camera_id: str) -> CameraThread | None:
         """根据 camera_id 获取摄像头线程实例"""

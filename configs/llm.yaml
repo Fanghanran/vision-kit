@@ -1,0 +1,18 @@
+# LLM 配置
+llm:
+  enabled: true
+  provider: openai
+  base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key: ${LLM_API_KEY}
+  model: qwen-plus
+  max_tokens: 1000
+  timeout: 30
+  max_retries: 2
+  monthly_budget_usd: 50
+
+rag:
+  enabled: false
+  vector_store: chromadb
+  persist_dir: data/vector_db
+  top_k: 5
+  knowledge_dir: data/knowledge

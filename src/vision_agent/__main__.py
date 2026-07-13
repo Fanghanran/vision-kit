@@ -43,8 +43,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--config",
-        default="configs/settings.yaml",
-        help="配置文件路径（默认 configs/settings.yaml）",
+        default="configs",
+        help="配置目录路径（默认 configs/，加载目录下所有 .yaml 文件）",
     )
     parser.add_argument(
         "--check",
@@ -260,35 +260,37 @@ def assemble_components(config: dict) -> tuple:
     from vision_agent.core.camera import CameraConfig
     from vision_agent.core.pipeline import CameraConfigItem, PipelineConfig, VisionAgent
 
-    # 摄像头配置
+    # 摄像头配置（从 ConfigManager 读取，支持 cameras.yaml + 旧目录）
     camera_configs = []
-    cameras_dir = Path("configs/cameras")
-    if cameras_dir.exists():
-        try:
-            import yaml
-
-            for yaml_file in sorted(cameras_dir.glob("*.yaml")):
-                with open(yaml_file, encoding="utf-8") as f:
-                    cam_data = yaml.safe_load(f)
-                if not cam_data or "camera" not in cam_data:
-                    continue
-                cam = cam_data["camera"]
-                resolution = cam.get("resolution", [640, 640])
-                cam_config = CameraConfig(
-                    camera_id=cam.get("id", ""),
-                    camera_name=cam.get("name", ""),
-                    rtsp_url=cam.get("rtsp_url", ""),
-                    source_type=cam.get("source_type", "rtsp"),
-                    video_path=cam.get("video_path", ""),
-                    fps=cam.get("fps", 0),
-                    width=resolution[0] if resolution else 640,
-                    height=resolution[1] if len(resolution) > 1 else 640,
-                )
-                camera_configs.append(
-                    CameraConfigItem(camera_config=cam_config, fps=cam.get("fps", 0))
-                )
-        except Exception as e:
-            logger.error("camera_config_load_failed error=%s", str(e))
+    cameras_data = config.get("cameras", {})
+    if isinstance(cameras_data, dict):
+        for cam_id, cam_entry in cameras_data.items():
+            if not isinstance(cam_entry, dict):
+                continue
+            # 新格式 {camera: {..., detector: {}} ，旧格式整个 dict 就是 camera
+            cam = cam_entry.get("camera") if "camera" in cam_entry else cam_entry
+            if not isinstance(cam, dict):
+                continue
+            resolution = cam.get("resolution", [640, 640])
+            w = resolution[0] if resolution else 640
+            h = resolution[1] if len(resolution) > 1 else 640
+            cam_config = CameraConfig(
+                camera_id=cam.get("id", cam_id),
+                camera_name=cam.get("name", ""),
+                rtsp_url=cam.get("rtsp_url", ""),
+                source_type=cam.get("source_type", "rtsp"),
+                video_path=cam.get("video_path", ""),
+                fps=cam.get("fps", 0),
+                width=w,
+                height=h,
+            )
+            # enabled: false → 跳过加载（不启动线程，可热加载恢复）
+            if cam.get("enabled") is False:
+                logger.info("camera_disabled camera=%s action=skip", cam_id)
+                continue
+            camera_configs.append(
+                CameraConfigItem(camera_config=cam_config, fps=cam.get("fps", 0))
+            )
 
     if not camera_configs:
         logger.warning("no_cameras_configured")
@@ -384,7 +386,7 @@ def main() -> int:
         config = config_mgr._global_config
     except FileNotFoundError:
         print(f"错误：配置文件不存在: {args.config}", file=sys.stderr)
-        print("请从 configs/settings.yaml.example 复制并填写配置。", file=sys.stderr)
+        print("请编辑 configs/ 下的 YAML 配置文件。", file=sys.stderr)
         return 1
     except Exception as e:
         print(f"错误：配置加载失败: {e}", file=sys.stderr)
@@ -393,8 +395,8 @@ def main() -> int:
     # --check 模式
     if args.check:
         print("Config OK")
-        cameras_dir = Path("configs/cameras")
-        cam_count = len(list(cameras_dir.glob("*.yaml"))) if cameras_dir.exists() else 0
+        cameras_data = config.get("cameras", {})
+        cam_count = len(cameras_data) if isinstance(cameras_data, dict) else 0
         llm_enabled = config.get("llm", {}).get("enabled", False)
         print(f"  摄像头: {cam_count} 路")
         print(f"  LLM: {'启用' if llm_enabled else '禁用'}")
@@ -406,7 +408,75 @@ def main() -> int:
 
     # 组装组件
     try:
+        from vision_agent.config.settings import _get_nested
+
         pipeline, database, web_app, web_config = assemble_components(config)
+
+        # 注入全局配置引用，使 pipeline 能按偏好发送通知 + 热加载重建 notifier
+        pipeline._set_config_reference(config_mgr._global_config)
+
+        def _build_cam_cfg(cam_data: dict, cam_id: str):
+            from vision_agent.core.camera import CameraConfig
+            res = cam_data.get("resolution", [640, 640])
+            return CameraConfig(
+                camera_id=cam_data.get("id", cam_id),
+                camera_name=cam_data.get("name", ""),
+                rtsp_url=cam_data.get("rtsp_url", ""),
+                source_type=cam_data.get("source_type", "rtsp"),
+                video_path=cam_data.get("video_path", ""),
+                fps=cam_data.get("fps", 0),
+                width=res[0] if res else 640,
+                height=res[1] if len(res) > 1 else 640,
+            )
+
+        # 注册配置热加载回调
+        def on_config_changed(change_type: str, camera_id: str,
+                              old_cfg: dict, new_cfg: dict) -> None:
+            if change_type == "camera_added":
+                cam_data = new_cfg.get("camera", new_cfg)
+                if isinstance(cam_data, dict) and cam_data.get("enabled") is not False:
+                    pipeline.add_camera(_build_cam_cfg(cam_data, camera_id), cam_data.get("fps", 0))
+                    logger.info("hot_add_camera camera=%s", camera_id)
+
+            elif change_type == "camera_updated":
+                cam_old = old_cfg.get("camera", old_cfg) if isinstance(old_cfg, dict) else {}
+                cam_new = new_cfg.get("camera", new_cfg) if isinstance(new_cfg, dict) else {}
+                was_enabled = cam_old.get("enabled") if isinstance(cam_old, dict) else True
+                is_enabled = cam_new.get("enabled") if isinstance(cam_new, dict) else True
+
+                if was_enabled is False and is_enabled is not False:
+                    # 禁用 → 启用
+                    pipeline.add_camera(_build_cam_cfg(cam_new, camera_id), cam_new.get("fps", 0))
+                    logger.info("hot_enable_camera camera=%s", camera_id)
+
+                elif was_enabled is not False and is_enabled is False:
+                    # 启用 → 禁用
+                    pipeline.remove_camera(camera_id)
+
+                elif was_enabled is not False and is_enabled is not False:
+                    # 配置变更（rtsp/video_path/fps/resolution 等）→ 用 reload 替换线程
+                    pipeline.reload_camera(_build_cam_cfg(cam_new, camera_id), cam_new.get("fps", 0))
+                    logger.info("hot_reload_camera camera=%s", camera_id)
+                # enabled 都 false → 都不做
+
+            elif change_type == "camera_removed":
+                pipeline.remove_camera(camera_id)
+
+            elif change_type == "global_updated":
+                notification_changed = False
+                for path in config_mgr._GLOBAL_HOT_RELOADABLE:
+                    new_val = _get_nested(new_cfg, path)
+                    old_val = _get_nested(old_cfg, path)
+                    if new_val != old_val and new_val is not None:
+                        if path.startswith("notification."):
+                            notification_changed = True
+                        else:
+                            pipeline.hot_update(path, new_val)
+                if notification_changed:
+                    pipeline.hot_update("notification", None)
+
+        config_mgr.watch(on_config_changed)
+
     except Exception as e:
         logger.error("component_assembly_failed error=%s", str(e), exc_info=True)
         return 1
@@ -424,6 +494,7 @@ def main() -> int:
     # 启动
     try:
         pipeline.start()
+        config_mgr.start_hot_reload()  # 启动文件监控：detector/recorder/notification/camera/rules 热加载
         start_web_server(web_app, web_config)
         logger.info("system_started cameras=%d", len(config.get("cameras", [])))
     except Exception as e:

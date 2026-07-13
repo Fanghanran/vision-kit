@@ -224,7 +224,7 @@ def create_app(
     _ID_PATTERN = re.compile(r"^[\w\-]+$")
 
     def _save_camera_yaml(camera_id: str, body: dict[str, Any]) -> None:
-        """将摄像头配置写回 configs/cameras/{camera_id}.yaml"""
+        """将摄像头配置写入 configs/cameras.yaml（新格式：camera + detector 分节）"""
         from pathlib import Path
 
         try:
@@ -232,36 +232,81 @@ def create_app(
         except ImportError:
             return
 
-        cam_dir = Path("configs/cameras")
-        cam_dir.mkdir(parents=True, exist_ok=True)
-        cam_file = cam_dir / f"{camera_id}.yaml"
+        cam_file = Path("configs/cameras.yaml")
+        import os as _os
 
-        # 构造 YAML 结构
+        # 读取现有配置
+        existing: dict[str, Any] = {"cameras": {}}
+        if cam_file.exists():
+            try:
+                loaded = yaml.safe_load(cam_file.read_text(encoding="utf-8")) or {}
+                existing = loaded if isinstance(loaded, dict) else {"cameras": {}}
+            except Exception:
+                pass
+
+        # 保持已有的 detector 段（如果有）
+        cameras = existing.get("cameras", {})
+        prev = cameras.get(camera_id, {})
+        prev_detector = prev.get("detector", {}) if isinstance(prev, dict) else {}
+
+        # camera 段
         resolution = body.get("resolution", [640, 640])
-        cfg = {
-            "camera": {
-                "id": camera_id,
-                "name": body.get("name", camera_id),
-                "source_type": body.get("source_type", "rtsp"),
-                "rtsp_url": body.get("rtsp_url", ""),
-                "video_path": body.get("video_path", ""),
-                "fps": body.get("fps", 0),
-                "resolution": resolution,
-            }
+        cam_data: dict[str, Any] = {
+            "id": camera_id,
+            "name": body.get("name", camera_id),
+            "source_type": body.get("source_type", "rtsp"),
+            "rtsp_url": body.get("rtsp_url", ""),
+            "video_path": body.get("video_path", ""),
+            "fps": body.get("fps", 0),
+            "resolution": resolution,
         }
-        cam_file.write_text(yaml.dump(cfg, allow_unicode=True, default_flow_style=False), encoding="utf-8")
+
+        # detector 段（可选）
+        detector_data = body.get("detector")
+        if isinstance(detector_data, dict):
+            merged_detector = {**prev_detector, **detector_data}
+        else:
+            merged_detector = prev_detector
+
+        entry: dict[str, Any] = {"camera": cam_data}
+        if merged_detector:
+            entry["detector"] = merged_detector
+
+        existing.setdefault("cameras", {})[camera_id] = entry
+
+        output = yaml.dump(existing, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        tmp = cam_file.with_suffix(".tmp")
+        tmp.write_text(output, encoding="utf-8")
+        _os.replace(str(tmp), str(cam_file))
         logger.info("camera_yaml_saved camera=%s file=%s", camera_id, cam_file)
 
     def _delete_camera_yaml(camera_id: str) -> None:
-        """删除 configs/cameras/{camera_id}.yaml"""
+        """从 configs/cameras.yaml 中删除摄像头（原子写入）"""
         from pathlib import Path
 
-        cam_file = Path("configs/cameras") / f"{camera_id}.yaml"
+        import os as _os
+
         try:
-            cam_file.unlink(missing_ok=True)
+            import yaml
+        except ImportError:
+            return
+
+        cam_file = Path("configs/cameras.yaml")
+        if not cam_file.exists():
+            return
+
+        try:
+            existing = yaml.safe_load(cam_file.read_text(encoding="utf-8")) or {}
+        except Exception:
+            return
+
+        if isinstance(existing, dict) and "cameras" in existing:
+            existing["cameras"].pop(camera_id, None)
+            output = yaml.dump(existing, allow_unicode=True, default_flow_style=False, sort_keys=False)
+            tmp = cam_file.with_suffix(".tmp")
+            tmp.write_text(output, encoding="utf-8")
+            _os.replace(str(tmp), str(cam_file))
             logger.info("camera_yaml_deleted camera=%s file=%s", camera_id, cam_file)
-        except OSError:
-            pass
 
     @app.post("/api/cameras/{camera_id}/toggle",
         tags=["摄像头"],
@@ -1019,16 +1064,14 @@ def create_app(
 
     @app.websocket("/ws/video/{camera_id}")
     async def video_stream(ws: WebSocket, camera_id: str) -> None:
-        """WebSocket JPEG 实时帧推送
+        """WebSocket 实时帧推送（帧已在 InferenceThread 中画好检测框，帧框同步）
 
-        协议（docs/frontend/MONITOR_PANEL.md 4.1 节）：
-        - 前 8 字节帧头：帧序号(uint32) + 时间戳(uint32)
-        - 后续字节：JPEG 数据
+        协议：前 8 字节帧头(seq+timestamp) + JPEG 数据
         """
         import asyncio
         import re
         import struct
-        from io import BytesIO
+        import time as _time
 
         # 路径遍历防护
         if not re.match(r"^[\w\-]+$", camera_id):
@@ -1044,77 +1087,41 @@ def create_app(
             await ws.close(code=1008, reason=f"camera {camera_id} not found")
             return
 
-        # 尝试导入图像编码库（模块级缓存）
-        if not hasattr(video_stream, "_encode_jpeg"):
-            video_stream._encode_jpeg = None  # type: ignore[attr-defined]
-            try:
-                import cv2
-
-                def _encode_cv2(frame: Any) -> bytes | None:
-                    ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                    return buf.tobytes() if ok else None
-
-                video_stream._encode_jpeg = _encode_cv2  # type: ignore[attr-defined]
-            except ImportError:
-                try:
-                    from PIL import Image
-
-                    def _encode_pil(frame: Any) -> bytes | None:
-                        img = Image.fromarray(frame[:, :, ::-1])  # BGR → RGB
-                        buf = BytesIO()
-                        img.save(buf, format="JPEG", quality=80)
-                        return buf.getvalue()
-
-                    video_stream._encode_jpeg = _encode_pil  # type: ignore[attr-defined]
-                except ImportError:
-                    logger.error("no_jpeg_encoder action=skip_video_ws")
-                    await ws.close(code=1011, reason="no JPEG encoder available")
-                    return
-
-        _encode_jpeg = video_stream._encode_jpeg  # type: ignore[attr-defined]
-
         await ws.accept()
-        frame_queue = cam_thread.subscribe_frames(maxsize=30)
+        # 保持订阅让摄像头线程不休眠（实际帧从 InferenceThread 缓存读取）
+        frame_queue = cam_thread.subscribe_frames(maxsize=5)
         logger.info(
             "video_ws_connected camera=%s thread_status=%s",
             camera_id,
             cam_thread.status.value,
         )
 
+        # 帧序号（用于帧头）
+        _last_seq = -1
+        # 帧 ID 去重，避免重复发送同一帧
+        _last_frame_id = -1
+
         try:
             while True:
-                # 在 executor 中阻塞读取帧（不阻塞事件循环）
-                try:
-                    frame_data = await asyncio.get_event_loop().run_in_executor(
-                        None, frame_queue.get, 5.0
-                    )
-                except Exception:
-                    # 超时，发心跳保活
+                entry = pipeline.get_last_frame_jpeg(camera_id)
+
+                if entry and entry[1] != _last_frame_id:
+                    jpeg_bytes, frame_id = entry
+                    if len(jpeg_bytes) > 100:
+                        _last_frame_id = frame_id
+                        ts = int(_time.time() * 1000) & 0xFFFFFFFF
+                        header = struct.pack(">II", _last_seq & 0xFFFFFFFF, ts)
+                        _last_seq += 1
+                        await ws.send_bytes(header + jpeg_bytes)
+                else:
+                    # 还没出新帧，发心跳保活
                     try:
                         await ws.send_json({"type": "ping"})
                     except Exception:
                         break
-                    continue
 
-                if frame_data is None:
-                    break
+                await asyncio.sleep(0.033)  # ~30 fps
 
-                jpeg_bytes = _encode_jpeg(frame_data.frame)
-                if jpeg_bytes is None:
-                    logger.debug(
-                        "jpeg_encode_failed camera=%s seq=%d",
-                        camera_id,
-                        frame_data.frame_seq,
-                    )
-                    continue
-
-                # 帧头：序号(4B) + 时间戳(4B)
-                header = struct.pack(
-                    ">II",
-                    frame_data.frame_seq & 0xFFFFFFFF,
-                    int(frame_data.timestamp) & 0xFFFFFFFF,
-                )
-                await ws.send_bytes(header + jpeg_bytes)
         except WebSocketDisconnect:
             pass
         except Exception as e:

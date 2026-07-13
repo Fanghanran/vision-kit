@@ -1,0 +1,62 @@
+# 检测规则配置（所有规则集中管理）
+
+rule_items:
+  # --- 安全帽检测 ---
+  - name: "example_zone_intrusion"
+    description: "当未佩戴安全帽的人员进入施工区域时触发告警"
+    conditions:
+      - type: object_in_zone
+        params:
+          zone: [[100, 200], [300, 200], [300, 400], [100, 400]]
+          target_classes: ["no_helmet"]
+    camera_ids: ["cam_01"]
+    severity: warning
+    cooldown: 300
+    window_size: 5
+    time_windows:
+      - start: "08:00"
+        end: "18:00"
+        days: [0, 1, 2, 3, 4]
+    actions:
+      - type: record_clip
+      - type: llm_analyze
+      - type: notify
+    enabled: false
+
+  # --- 计数线穿越 ---
+  - name: "example_count_line"
+    description: "统计穿越指定线段的目标数量，达到阈值时触发告警"
+    conditions:
+      - type: count_line
+        params:
+          line_start: [100, 300]
+          line_end: [500, 300]
+          threshold: 10
+          target_classes: ["person"]
+    camera_ids: ["cam_01"]
+    severity: info
+    cooldown: 600
+    actions:
+      - type: notify
+    enabled: false
+
+  # --- 区域清空（离岗检测）---
+  - name: "example_zone_empty"
+    description: "当指定区域内没有人员时触发告警（人员离岗检测）"
+    conditions:
+      - type: zone_empty
+        params:
+          zone: [[200, 300], [400, 300], [400, 500], [200, 500]]
+          target_classes: ["person"]
+    camera_ids: ["cam_02"]
+    severity: critical
+    cooldown: 60
+    time_windows:
+      - start: "08:00"
+        end: "18:00"
+        days: [0, 1, 2, 3, 4]
+    actions:
+      - type: record_clip
+      - type: llm_analyze
+      - type: notify
+    enabled: false

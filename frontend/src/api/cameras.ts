@@ -13,6 +13,14 @@ export async function toggleCamera(cameraId: string): Promise<{ camera_id: strin
   return data
 }
 
+export interface DetectorOverride {
+  model_path?: string
+  confidence?: number
+  iou_threshold?: number
+  classes?: number[] | null
+  input_size?: number
+}
+
 export interface CreateCameraPayload {
   id: string
   name: string
@@ -21,6 +29,7 @@ export interface CreateCameraPayload {
   video_path?: string
   fps?: number
   resolution?: [number, number]
+  detector?: DetectorOverride
 }
 
 export async function createCamera(payload: CreateCameraPayload): Promise<{ camera_id: string; action: string }> {

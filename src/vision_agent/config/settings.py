@@ -56,7 +56,7 @@ _DEFAULTS: dict[str, Any] = {
         "model_path": "",
         "model_name": "yolo11m",
         "confidence": 0.5,
-        "iou": 0.45,
+        "iou_threshold": 0.45,
         "input_size": 640,
         "classes": None,
     },
@@ -126,8 +126,7 @@ _DEFAULTS: dict[str, Any] = {
 
 # ─── 异常（统一定义在 core/exceptions.py）────────────────────
 
-from vision_agent.core.exceptions import (  # noqa: E402, F401, I001
-    ConfigError,  # exported for downstream use
+from vision_agent.core.exceptions import (  # noqa: E402
     ConfigLoadError,
     ConfigValidationError,
 )
@@ -332,7 +331,7 @@ def validate_global_config(config: dict[str, Any]) -> ValidationResult:
     if not isinstance(confidence, (int, float)) or not (0.0 <= confidence <= 1.0):
         result.add_error(f"detector.confidence 必须是 0.0-1.0: {confidence}")
 
-    iou = detector.get("iou", 0.45)
+    iou = detector.get("iou_threshold", detector.get("iou", 0.45))
     if not isinstance(iou, (int, float)) or not (0.0 <= iou <= 1.0):
         result.add_error(f"detector.iou 必须是 0.0-1.0: {iou}")
 
@@ -435,7 +434,8 @@ class ConfigManager:
             config_path: settings.yaml 的路径
         """
         self._config_path = Path(config_path)
-        self._config_dir = self._config_path.parent
+        # 支持传目录路径（如 configs/），自动加载目录下所有 .yaml
+        self._config_dir = self._config_path if self._config_path.is_dir() else self._config_path.parent
         self._global_config: dict[str, Any] = {}
         self._camera_configs: dict[str, dict[str, Any]] = {}  # camera_id → raw config
         self._file_to_cam_id: dict[str, str] = {}  # 文件路径 → camera_id
@@ -453,16 +453,36 @@ class ConfigManager:
     # ─── 公开接口 ──────────────────────────────────────────────
 
     def load(self) -> None:
-        """加载并校验全部配置（config.md 3.1 节）
+        """加载并校验全部配置
 
-        流程：加载 YAML → 环境变量替换 → 合并默认值 → 校验 → 加载摄像头配置
+        流程：扫描 configs/ 下所有 .yaml → 合并 → 环境变量替换 → 合并默认值 → 校验 → 加载摄像头
 
         Raises:
             ConfigLoadError: 文件不存在或 YAML 语法错误
             ConfigValidationError: 配置校验不通过
         """
-        # 1. 加载 settings.yaml
-        raw_config = load_yaml(self._config_path)
+        # 1. 从配置目录加载所有 .yaml 文件
+        raw_config: dict[str, Any] = {}
+        if self._config_dir.exists():
+            for yaml_file in sorted(self._config_dir.glob("*.yaml")):
+                try:
+                    part = load_yaml(str(yaml_file))
+                    if isinstance(part, dict):
+                        part.pop("version", None)
+                        raw_config.update(part)
+                    logger.debug("config_loaded file=%s", yaml_file.name)
+                except ConfigLoadError:
+                    logger.warning("config_skip file=%s", yaml_file.name)
+
+            # 也兼容传单个文件路径（非目录）的情况
+            if not self._config_dir.is_dir():
+                try:
+                    part = load_yaml(str(self._config_path))
+                    if isinstance(part, dict):
+                        part.pop("version", None)
+                        raw_config.update(part)
+                except ConfigLoadError:
+                    pass
 
         # 2. 环境变量替换
         raw_config = substitute_env_vars(raw_config)
@@ -647,6 +667,25 @@ class ConfigManager:
 
     # 全局配置热加载字段白名单（其他字段修改后记录 WARNING 提示重启）
     _GLOBAL_HOT_RELOADABLE = {
+        # detector — 运行时 setter
+        "detector.confidence",
+        "detector.iou_threshold",
+        "detector.input_size",
+        # recording — recorder.hot_update_config
+        "recording.retention_days",
+        "recording.snapshot_retention_days",
+        # notification — pipeline._rebuild_notifiers
+        "notification.webhook.enabled",
+        "notification.webhook.url",
+        "notification.email.enabled",
+        "notification.email.smtp_host",
+        "notification.email.smtp_port",
+        "notification.email.username",
+        "notification.email.password",
+        "notification.email.recipients",
+    }
+
+    _GLOBAL_IMMUTABLE_WHEN_CHANGED = {
         "system.log_level",
         "system.log_max_size_mb",
         "system.log_backup_count",
@@ -657,19 +696,8 @@ class ConfigManager:
         "llm.timeout",
         "llm.max_retries",
         "llm.daily_budget",
-        "notification.webhook.enabled",
-        "notification.webhook.url",
-        "notification.email.enabled",
-        "notification.email.smtp_host",
-        "notification.email.smtp_port",
-        "notification.email.username",
-        "notification.email.password",
-        "notification.email.recipients",
         "rules.hot_reload",
         "rules.hot_reload_interval",
-    }
-
-    _GLOBAL_IMMUTABLE_WHEN_CHANGED = {
         "gpu.device_id",
         "detector.model_path",
         "detector.model_name",
@@ -695,7 +723,8 @@ class ConfigManager:
         if self._reload_thread and self._reload_thread.is_alive():
             return
         self._running = True
-        self._global_config_mtime = self._config_path.stat().st_mtime
+        # 初始化：记录 configs/ 下所有 yaml 的 mtime
+        self._update_global_mtimes()
         self._reload_thread = threading.Thread(
             target=self._hot_reload_loop, name="config-reload", daemon=True
         )
@@ -703,6 +732,16 @@ class ConfigManager:
         logger.info(
             "config_hot_reload_started interval=%.0fs", self._hot_reload_interval
         )
+
+    def _update_global_mtimes(self) -> None:
+        """扫描 configs/ 下所有 yaml 并记录 mtime"""
+        self._global_mtimes: dict[str, float] = {}
+        if self._config_dir.is_dir():
+            for f in self._config_dir.glob("*.yaml"):
+                try:
+                    self._global_mtimes[f.name] = f.stat().st_mtime
+                except OSError:
+                    pass
 
     def stop_hot_reload(self) -> None:
         """停止热重载监控线程"""
@@ -725,22 +764,32 @@ class ConfigManager:
                 logger.error("config_hot_reload_error error=%s", str(e), exc_info=True)
 
     def _check_global_config_changes(self) -> None:
-        """检查 settings.yaml 是否修改，有变化时热加载安全字段"""
-        try:
-            current_mtime = self._config_path.stat().st_mtime
-        except OSError:
+        """检查 configs/ 下任意 yaml 是否修改，有变化时热加载安全字段"""
+        if not self._config_dir.is_dir():
             return
-        if current_mtime <= self._global_config_mtime:
+        changed = False
+        for f in self._config_dir.glob("*.yaml"):
+            try:
+                mt = f.stat().st_mtime
+                if mt > self._global_mtimes.get(f.name, 0):
+                    changed = True
+                    self._global_mtimes[f.name] = mt
+            except OSError:
+                continue
+        if not changed:
             return
-        self._global_config_mtime = current_mtime
 
-        try:
-            raw = load_yaml(self._config_path)
-            raw = substitute_env_vars(raw)
-        except Exception as e:
-            logger.warning("global_config_reload_parse_error error=%s", str(e))
-            return
-
+        # 重新加载所有 yaml（与 load() 逻辑一致）
+        raw: dict[str, Any] = {}
+        for yaml_file in sorted(self._config_dir.glob("*.yaml")):
+            try:
+                part = load_yaml(str(yaml_file))
+                if isinstance(part, dict):
+                    part.pop("version", None)
+                    raw.update(part)
+            except ConfigLoadError:
+                continue
+        raw = substitute_env_vars(raw)
         new_config = deep_merge(_DEFAULTS, raw)
         old_config = self._global_config
 
@@ -772,29 +821,78 @@ class ConfigManager:
         )
 
     def _check_camera_changes(self) -> None:
-        """检查摄像头配置文件变化"""
+        """检查摄像头配置文件变化（cameras.yaml + 兼容 cameras/ 目录）"""
+        cameras_yaml = str(self._config_dir / "cameras.yaml")
         cameras_dir = self._config_dir / "cameras"
-        if not cameras_dir.exists():
+
+        # 优先检查 cameras.yaml
+        if Path(cameras_yaml).exists():
+            try:
+                mtime = Path(cameras_yaml).stat().st_mtime
+                if mtime > self._camera_mtimes.get(cameras_yaml, 0):
+                    self._reload_cameras_yaml()
+                self._camera_mtimes[cameras_yaml] = mtime
+            except OSError:
+                pass
+
+        # 兼容 cameras/ 目录
+        if cameras_dir.exists():
+            current_files: dict[str, float] = {}
+            for yaml_file in cameras_dir.glob("*.yaml"):
+                try:
+                    current_files[str(yaml_file)] = yaml_file.stat().st_mtime
+                except OSError:
+                    continue
+            for file_path, mtime in current_files.items():
+                if mtime > self._camera_mtimes.get(file_path, 0):
+                    self._try_reload_camera_file(file_path)
+            self._camera_mtimes.update(current_files)
+
+    def _reload_cameras_yaml(self) -> None:
+        """从 cameras.yaml 重新加载摄像头，比对前后差异通知 watchers"""
+        cameras_yaml = self._config_dir / "cameras.yaml"
+        try:
+            raw = load_yaml(str(cameras_yaml))
+            raw = substitute_env_vars(raw)
+            cameras_data = raw.get("cameras", {}) if isinstance(raw, dict) else {}
+        except ConfigLoadError:
             return
 
-        current_files: dict[str, float] = {}
-        for yaml_file in cameras_dir.glob("*.yaml"):
-            try:
-                current_files[str(yaml_file)] = yaml_file.stat().st_mtime
-            except OSError:
+        old_ids = set(self._camera_configs.keys())
+        new_ids = set()
+
+        for cam_id, cam_entry in cameras_data.items():
+            if not isinstance(cam_entry, dict):
                 continue
+            # 新格式：{camera: {...}, detector: {...}}
+            cam_part = cam_entry.get("camera")
+            if isinstance(cam_part, dict):
+                wrapped = cam_entry
+            else:
+                # 旧格式：整节就是 camera
+                cam_entry.setdefault("id", cam_id)
+                wrapped = {"camera": cam_entry}
 
-        # 检查新增和修改
-        for file_path, mtime in current_files.items():
-            old_mtime = self._camera_mtimes.get(file_path, 0)
-            if mtime > old_mtime:
-                self._try_reload_camera_file(file_path)
+            cam_data = wrapped.get("camera", wrapped)
+            validation = validate_camera_config(
+                {"camera": cam_data}, set(new_ids),
+            )
+            if not validation.is_valid:
+                continue
+            new_ids.add(cam_id)
+            old_config = self._camera_configs.get(cam_id, {})
+            if not old_config:
+                self._camera_configs[cam_id] = wrapped
+                self._notify_watchers("camera_added", cam_id, {}, wrapped)
+            elif wrapped != old_config:
+                self._camera_configs[cam_id] = wrapped
+                self._notify_watchers("camera_updated", cam_id, old_config, wrapped)
 
-        # 检查删除
-        for file_path in set(self._camera_mtimes.keys()) - set(current_files.keys()):
-            self._handle_camera_file_removed(file_path)
-
-        self._camera_mtimes = current_files
+        # 移除已删除的
+        for removed in old_ids - new_ids:
+            old = self._camera_configs.pop(removed, {})
+            self._notify_watchers("camera_removed", removed, old, {})
+            logger.info("camera_removed_from_cameras_yaml camera=%s", removed)
 
     def _try_reload_camera_file(self, file_path: str) -> None:
         """尝试重载单个摄像头配置文件"""
@@ -839,44 +937,74 @@ class ConfigManager:
     # ─── 内部方法 ──────────────────────────────────────────────
 
     def _load_camera_configs(self) -> None:
-        """加载 cameras/ 目录下的所有摄像头配置"""
-        cameras_dir = self._config_dir / "cameras"
-        if not cameras_dir.exists():
-            logger.info("cameras_dir_not_found path=%s", cameras_dir)
-            return
-
+        """加载 cameras.yaml 中的摄像头配置（也兼容旧的 cameras/ 目录）"""
         new_configs: dict[str, dict[str, Any]] = {}
         new_file_map: dict[str, str] = {}
         existing_ids: set[str] = set()
 
-        for yaml_file in sorted(cameras_dir.glob("*.yaml")):
+        # 优先从 cameras.yaml 加载
+        cameras_yaml = self._config_dir / "cameras.yaml"
+        if cameras_yaml.exists():
             try:
-                raw = load_yaml(yaml_file)
+                raw = load_yaml(str(cameras_yaml))
                 raw = substitute_env_vars(raw)
+                cameras_data = raw.get("cameras", {})
+                for cam_id, cam_entry in cameras_data.items():
+                    if not isinstance(cam_entry, dict):
+                        continue
 
-                cam_id = raw.get("camera", {}).get("id", "")
-                if not cam_id:
-                    logger.warning("camera_config_no_id file=%s", yaml_file)
-                    continue
+                    # 新格式：{camera: {...}, detector: {...}}
+                    cam_data = cam_entry.get("camera")
+                    if isinstance(cam_data, dict):
+                        wrapped = cam_entry  # 保存完整结构（camera + detector）
+                    else:
+                        # 兼容旧格式：整节就是 camera
+                        cam_data = cam_entry
+                        cam_data.setdefault("id", cam_id)
+                        wrapped = {"camera": cam_data}
 
-                validation = validate_camera_config(raw, existing_ids)
-                if not validation.is_valid:
-                    for err in validation.errors:
-                        logger.error(
-                            "camera_config_error file=%s error=%s", yaml_file, err
-                        )
-                    continue
+                    # 校验 camera 段
+                    cam_part = wrapped.get("camera", wrapped)
+                    validation = validate_camera_config(
+                        {"camera": cam_part},
+                        existing_ids,
+                    )
+                    if not validation.is_valid:
+                        for err in validation.errors:
+                            logger.error("camera_config_error id=%s error=%s", cam_id, err)
+                        continue
 
-                for w in validation.warnings:
-                    logger.warning("camera_config_warning file=%s %s", yaml_file, w)
+                    new_configs[cam_id] = wrapped
+                    new_file_map[str(cameras_yaml)] = cam_id
+                    existing_ids.add(cam_id)
+                logger.info("cameras_loaded source=cameras.yaml count=%d", len(new_configs))
+            except ConfigLoadError:
+                logger.warning("cameras_yaml_load_failed path=%s", cameras_yaml)
 
-                new_configs[cam_id] = raw
-                new_file_map[str(yaml_file)] = cam_id
-                existing_ids.add(cam_id)
-                self._camera_mtimes[str(yaml_file)] = yaml_file.stat().st_mtime
-
-            except ConfigLoadError as e:
-                logger.error("camera_config_load_failed file=%s error=%s", yaml_file, e)
+        # 兼容旧 cameras/ 目录
+        cameras_dir = self._config_dir / "cameras"
+        if cameras_dir.exists():
+            for yaml_file in sorted(cameras_dir.glob("*.yaml")):
+                try:
+                    raw = load_yaml(yaml_file)
+                    raw = substitute_env_vars(raw)
+                    cam_id = raw.get("camera", {}).get("id", "")
+                    if not cam_id:
+                        logger.warning("camera_config_no_id file=%s", yaml_file)
+                        continue
+                    if cam_id in existing_ids:
+                        logger.debug("camera_skip_duplicate id=%s source=cameras.yaml", cam_id)
+                        continue
+                    validation = validate_camera_config(raw, existing_ids)
+                    if not validation.is_valid:
+                        for err in validation.errors:
+                            logger.error("camera_config_error file=%s error=%s", yaml_file, err)
+                        continue
+                    new_configs[cam_id] = raw
+                    new_file_map[str(yaml_file)] = cam_id
+                    existing_ids.add(cam_id)
+                except ConfigLoadError:
+                    logger.warning("camera_config_load_failed file=%s", yaml_file)
 
         with self._lock:
             self._camera_configs = new_configs

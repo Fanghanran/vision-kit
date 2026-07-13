@@ -608,25 +608,65 @@ class RuleEngine:
     # ─── 公开接口 ──────────────────────────────────────────────
 
     def load_rules(self, rules_dir: str) -> None:
-        """加载指定目录下所有 YAML 规则文件
+        """加载规则：优先从 rules.yaml，兼容旧 rules/ 目录
 
         Args:
-            rules_dir: 规则文件目录路径
+            rules_dir: 规则目录路径（也用于定位同级的 rules.yaml）
         """
         self._rules_dir = rules_dir
         rules_path = Path(rules_dir)
+
+        # 优先加载 configs/rules.yaml
+        rules_yaml = rules_path.parent / "rules.yaml"
+        if rules_yaml.exists():
+            try:
+                import yaml as _yaml
+                raw = _yaml.safe_load(rules_yaml.read_text(encoding="utf-8")) or {}
+                rule_list = raw.get("rule_items", [])
+                if isinstance(rule_list, list):
+                    for rule_config in rule_list:
+                        if isinstance(rule_config, dict):
+                            self._load_rule_config(rule_config, str(rules_yaml))
+                    logger.info("rules_loaded source=rules.yaml count=%d", len(self._rules))
+                    return
+            except Exception as e:
+                logger.warning("rules_yaml_load_failed path=%s error=%s", rules_yaml, e)
+
+        # 兼容旧 rules/ 目录
         if not rules_path.exists():
             logger.warning("rules_dir_not_found path=%s", rules_dir)
             return
 
         for yaml_file in sorted(rules_path.glob("*.yaml")):
             self._load_single_rule_file(yaml_file)
-
-        # 也扫描 .yml 文件
         for yaml_file in sorted(rules_path.glob("*.yml")):
             self._load_single_rule_file(yaml_file)
 
         logger.info("rules_loaded count=%d dir=%s", len(self._rules), rules_dir)
+
+    def _load_rule_config(self, config: dict[str, Any], source: str) -> None:
+        """从 dict 加载单个规则（来自 rules.yaml 的列表项）"""
+        module_path = config.get("module")
+        class_name = config.get("class")
+        if module_path and class_name:
+            self._load_python_rule(config, source)
+            return
+
+        rule = create_rule_from_yaml(config)
+        if rule:
+            rule_name = rule.name
+            with self._lock:
+                if rule_name in self._rules:
+                    logger.warning("rule_name_conflict name=%s", rule_name)
+                self._rules[rule_name] = rule
+                self._rule_sources[rule_name] = source
+                self._rule_configs[rule_name] = {
+                    "window_size": config.get("window_size"),
+                    "cooldown": config.get("cooldown"),
+                    "time_windows": config.get("time_windows"),
+                }
+            rule.reset()
+            logger.info("rule_loaded name=%s source=%s", rule_name, source)
 
     def evaluate(
         self,
@@ -802,7 +842,35 @@ class RuleEngine:
                 logger.error("rule_hot_reload_error error=%s", str(e), exc_info=True)
 
     def _check_rule_changes(self) -> None:
-        """检查规则文件变化"""
+        """检查规则文件变化（优先 rules.yaml，兼容 rules/ 目录）"""
+        rules_yaml = Path(self._rules_dir).parent / "rules.yaml"
+
+        # 优先检查 rules.yaml
+        if rules_yaml.exists():
+            try:
+                mtime = rules_yaml.stat().st_mtime
+                if mtime > self._file_mtimes.get(str(rules_yaml), 0):
+                    logger.info("rules_yaml_changed action=reload")
+                    old_names = set(self._rules.keys())
+                    with self._lock:
+                        self._rules.clear()
+                        self._rule_sources.clear()
+                        self._rule_configs.clear()
+                    import yaml as _yaml
+                    raw = _yaml.safe_load(rules_yaml.read_text(encoding="utf-8")) or {}
+                    rule_list = raw.get("rule_items", [])
+                    if isinstance(rule_list, list):
+                        for rule_config in rule_list:
+                            if isinstance(rule_config, dict):
+                                self._load_rule_config(rule_config, str(rules_yaml))
+                    new_names = set(self._rules.keys())
+                    logger.info("rules_reloaded_from_yaml total=%d", len(new_names))
+                self._file_mtimes[str(rules_yaml)] = mtime
+                return
+            except OSError:
+                pass
+
+        # 兼容旧 rules/ 目录
         rules_path = Path(self._rules_dir)
         if not rules_path.exists():
             return
@@ -816,13 +884,11 @@ class RuleEngine:
             except OSError:
                 continue
 
-        # 检查新增和修改
         for file_path, mtime in current_files.items():
             old_mtime = self._file_mtimes.get(file_path, 0)
             if mtime > old_mtime:
                 self._reload_single_file(file_path)
 
-        # 检查删除
         for file_path in set(self._file_mtimes.keys()) - set(current_files.keys()):
             self._remove_rules_from_file(file_path)
 

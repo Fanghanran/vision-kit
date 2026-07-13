@@ -210,6 +210,21 @@
           <el-input-number v-model="addForm.width" :min="320" :max="4096" /> ×
           <el-input-number v-model="addForm.height" :min="240" :max="4096" />
         </el-form-item>
+
+        <el-divider content-position="left">
+          <el-switch v-model="addForm.useDetector" active-text="自定义检测参数" inactive-text="使用全局默认" />
+        </el-divider>
+        <template v-if="addForm.useDetector">
+          <el-form-item label="模型路径">
+            <el-input v-model="addForm.detector.model_path" placeholder="models/helmet.pt" />
+          </el-form-item>
+          <el-form-item label="置信度">
+            <el-input-number v-model="addForm.detector.confidence" :min="0.1" :max="1" :step="0.05" />
+          </el-form-item>
+          <el-form-item label="输入尺寸">
+            <el-input-number v-model="addForm.detector.input_size" :min="320" :max="1280" :step="32" />
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="addVisible = false">取消</el-button>
@@ -244,6 +259,21 @@
           <el-input-number v-model="editForm.width" :min="320" :max="4096" /> ×
           <el-input-number v-model="editForm.height" :min="240" :max="4096" />
         </el-form-item>
+
+        <el-divider content-position="left">
+          <el-switch v-model="editForm.useDetector" active-text="自定义检测参数" inactive-text="使用全局默认" />
+        </el-divider>
+        <template v-if="editForm.useDetector">
+          <el-form-item label="模型路径">
+            <el-input v-model="editForm.detector.model_path" placeholder="models/helmet.pt" />
+          </el-form-item>
+          <el-form-item label="置信度">
+            <el-input-number v-model="editForm.detector.confidence" :min="0.1" :max="1" :step="0.05" />
+          </el-form-item>
+          <el-form-item label="输入尺寸">
+            <el-input-number v-model="editForm.detector.input_size" :min="320" :max="1280" :step="32" />
+          </el-form-item>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
@@ -324,13 +354,20 @@ function openEditFromDetailData(d: CameraDetail) {
 
 // 添加
 const addVisible = ref(false)
-const addForm = reactive({ id: '', name: '', source_type: 'test' as 'rtsp'|'video'|'test', rtsp_url: '', video_path: '', fps: 0, width: 640, height: 640 })
+const addForm = reactive({
+  id: '', name: '', source_type: 'test' as 'rtsp'|'video'|'test',
+  rtsp_url: '', video_path: '', fps: 0, width: 640, height: 640,
+  useDetector: false,
+  detector: { model_path: '', confidence: 0.5, input_size: 640 },
+})
 const addLoading = ref(false)
 
 function openAdd() {
   addForm.id = ''; addForm.name = ''; addForm.source_type = 'test'
   addForm.rtsp_url = ''; addForm.video_path = ''
   addForm.fps = 0; addForm.width = 640; addForm.height = 640
+  addForm.useDetector = false
+  addForm.detector = { model_path: '', confidence: 0.5, input_size: 640 }
   addVisible.value = true
 }
 
@@ -338,6 +375,9 @@ async function doAdd() {
   const payload: CreateCameraPayload = { id: addForm.id, name: addForm.name || addForm.id, source_type: addForm.source_type, fps: addForm.fps, resolution: [addForm.width, addForm.height] }
   if (addForm.source_type === 'rtsp') payload.rtsp_url = addForm.rtsp_url
   if (addForm.source_type === 'video') payload.video_path = addForm.video_path
+  if (addForm.useDetector && addForm.detector.model_path) {
+    payload.detector = { ...addForm.detector }
+  }
   addLoading.value = true
   try { await store.createCamera(payload); addVisible.value = false } finally { addLoading.value = false }
 }
@@ -345,18 +385,27 @@ async function doAdd() {
 // 编辑
 const editVisible = ref(false)
 const editingCamId = ref('')
-const editForm = reactive({ name: '', source_type: 'test' as 'rtsp'|'video'|'test', rtsp_url: '', video_path: '', fps: 0, width: 640, height: 640 })
+const editForm = reactive({
+  name: '', source_type: 'test' as 'rtsp'|'video'|'test',
+  rtsp_url: '', video_path: '', fps: 0, width: 640, height: 640,
+  useDetector: false,
+  detector: { model_path: '', confidence: 0.5, input_size: 640 },
+})
 const editLoading = ref(false)
 
 async function doEdit() {
   editLoading.value = true
   try {
-    await store.updateCamera(editingCamId.value, {
+    const payload: Record<string,any> = {
       name: editForm.name, source_type: editForm.source_type, fps: editForm.fps,
       resolution: [editForm.width, editForm.height],
       ...(editForm.source_type === 'rtsp' ? { rtsp_url: editForm.rtsp_url } : {}),
       ...(editForm.source_type === 'video' ? { video_path: editForm.video_path } : {}),
-    })
+    }
+    if (editForm.useDetector && editForm.detector.model_path) {
+      payload.detector = { ...editForm.detector }
+    }
+    await store.updateCamera(editingCamId.value, payload)
     editVisible.value = false
   } finally { editLoading.value = false }
 }

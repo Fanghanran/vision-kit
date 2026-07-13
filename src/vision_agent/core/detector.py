@@ -192,6 +192,16 @@ class YOLODetector:
         """运行时调整置信度阈值"""
         self._config.confidence = threshold
 
+    def set_iou_threshold(self, threshold: float) -> None:
+        """运行时调整 IoU 阈值"""
+        self._config.iou_threshold = threshold
+
+    def set_input_size(self, size: int) -> None:
+        """运行时调整输入分辨率"""
+        self._config.input_size = size
+        if self._model is not None:
+            self._model.overrides["imgsz"] = size
+
     @property
     def config(self) -> DetectorConfig:
         return self._config

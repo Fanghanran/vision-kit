@@ -1,0 +1,24 @@
+cameras:
+  cam_01:
+    camera:
+      id: cam_01
+      name: 测试摄像头-01
+      source_type: video
+      video_path: data/helmet_video.mp4
+      fps: 0
+      resolution:
+      - 640
+      - 640
+      enabled: true
+    detector:
+      model_path: models/helmet.pt
+      confidence: 0.3
+      iou_threshold: 0.45
+      classes: null
+      input_size: 320
+detector:
+  model_path: models/helmet.pt
+  confidence: 0.3
+  iou_threshold: 0.45
+  classes: null
+  input_size: 320

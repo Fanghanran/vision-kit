@@ -54,6 +54,8 @@ export function useVideoStream(cameraId: string) {
     }
 
     ws.onmessage = (event: MessageEvent) => {
+      // 跳过文本消息（心跳/JSON），只处理二进制帧
+      if (typeof event.data === 'string' || !(event.data instanceof ArrayBuffer)) return
       const data = event.data as ArrayBuffer
       if (data.byteLength < 8) return
 

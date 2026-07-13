@@ -669,10 +669,3 @@ class CameraThread:
     def _calculate_fps(self) -> float:
         """返回实时 FPS（基于最近 1 秒窗口）"""
         return self._realtime_fps
-    def update_detection_count(self, count: int) -> None:
-        """由 pipeline 调用，更新检测计数"""
-        self._total_detections += count
-
-    def update_alert_count(self, count: int = 1) -> None:
-        """由 pipeline 调用，更新告警计数"""
-        self._total_alerts += count

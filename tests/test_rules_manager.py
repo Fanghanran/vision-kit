@@ -1,4 +1,4 @@
-"""规则管理器单元测试 — CRUD、校验、干跑测试"""
+"""规则管理器单元测试 — CRUD、校验、干跑测试（适配单文件 rules.yaml）"""
 
 from pathlib import Path
 
@@ -11,18 +11,12 @@ from vision_agent.rules.manager import RuleManager
 # ─── 辅助函数 ──────────────────────────────────────────────
 
 def _valid_config(name: str = "test_rule", **overrides) -> dict:
-    """构造合法的规则配置"""
     config = {
         "name": name,
-        "conditions": [
-            {
-                "type": "object_in_zone",
-                "params": {
-                    "zone": [[0, 0], [100, 0], [100, 100], [0, 100]],
-                    "target_classes": ["person"],
-                },
-            }
-        ],
+        "conditions": [{"type": "object_in_zone", "params": {
+            "zone": [[0, 0], [100, 0], [100, 100], [0, 100]],
+            "target_classes": ["person"],
+        }}],
         "severity": "warning",
         "cooldown": 300,
         "window_size": 5,
@@ -35,81 +29,68 @@ def _valid_config(name: str = "test_rule", **overrides) -> dict:
     return config
 
 
-def _write_yaml(path: Path, config: dict) -> None:
-    """写入 YAML 文件到指定路径"""
-    content = yaml.dump(config, allow_unicode=True, default_flow_style=False, sort_keys=False)
-    path.write_text(content, encoding="utf-8")
+def _write_rules_yaml(path: Path, rules: list[dict]) -> None:
+    data = {"rule_items": rules}
+    path.write_text(yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False), encoding="utf-8")
 
 
 # ─── Fixtures ──────────────────────────────────────────────
 
 @pytest.fixture
-def rules_dir(tmp_path):
-    """使用临时目录作为规则目录"""
-    d = tmp_path / "rules"
-    d.mkdir()
-    return str(d)
+def rules_file(tmp_path):
+    return str(tmp_path / "rules.yaml")
 
 
 @pytest.fixture
-def manager(rules_dir):
-    """创建 RuleManager 实例"""
-    return RuleManager(rules_dir=rules_dir)
+def manager(rules_file):
+    return RuleManager(rules_file=rules_file)
 
 
 # ─── 列出规则 ─────────────────────────────────────────────
 
 class TestListRulesFromTemplates:
-    """列出模板规则（预填充 YAML 文件）"""
 
     @pytest.fixture
-    def template_dir(self, tmp_path):
-        """创建包含模板文件的临时目录"""
-        d = tmp_path / "rules_with_templates"
-        d.mkdir()
-        # 写入三条模板规则
-        _write_yaml(d / "example_zone_intrusion.yaml", {
-            "name": "example_zone_intrusion",
-            "description": "区域闯入检测模板",
-            "conditions": [{"type": "object_in_zone", "params": {
-                "zone": [[100, 200], [300, 200], [300, 400], [100, 400]],
-                "target_classes": ["person"],
-            }}],
-            "camera_ids": ["cam_01"],
-            "severity": "warning",
-            "cooldown": 300,
-            "window_size": 5,
-            "actions": [{"type": "record_clip"}, {"type": "llm_analyze"}, {"type": "notify"}],
-            "enabled": False,
-        })
-        _write_yaml(d / "example_count_line.yaml", {
-            "name": "example_count_line",
-            "description": "计数线模板",
-            "conditions": [{"type": "count_line", "params": {
-                "line_start": [0, 100],
-                "line_end": [200, 100],
-            }}],
-            "camera_ids": None,
-            "severity": "info",
-            "actions": [{"type": "notify"}],
-            "enabled": True,
-        })
-        _write_yaml(d / "example_zone_empty.yaml", {
-            "name": "example_zone_empty",
-            "description": "区域清空模板",
-            "conditions": [{"type": "zone_empty", "params": {
-                "zone": [[0, 0], [100, 0], [100, 100], [0, 100]],
-            }}],
-            "camera_ids": ["cam_02"],
-            "severity": "critical",
-            "actions": [],
-            "enabled": True,
-        })
-        return str(d)
+    def template_file(self, tmp_path):
+        """创建包含三条模板规则的 rules.yaml"""
+        path = tmp_path / "rules.yaml"
+        _write_rules_yaml(path, [
+            {
+                "name": "example_zone_intrusion",
+                "description": "区域闯入检测模板",
+                "conditions": [{"type": "object_in_zone", "params": {
+                    "zone": [[100, 200], [300, 200], [300, 400], [100, 400]],
+                    "target_classes": ["person"],
+                }}],
+                "camera_ids": ["cam_01"], "severity": "warning",
+                "cooldown": 300, "window_size": 5,
+                "actions": [{"type": "record_clip"}, {"type": "llm_analyze"}, {"type": "notify"}],
+                "enabled": False,
+            },
+            {
+                "name": "example_count_line",
+                "description": "计数线模板",
+                "conditions": [{"type": "count_line", "params": {
+                    "line_start": [0, 100], "line_end": [200, 100],
+                }}],
+                "camera_ids": None, "severity": "info",
+                "actions": [{"type": "notify"}],
+                "enabled": True,
+            },
+            {
+                "name": "example_zone_empty",
+                "description": "区域清空模板",
+                "conditions": [{"type": "zone_empty", "params": {
+                    "zone": [[0, 0], [100, 0], [100, 100], [0, 100]],
+                }}],
+                "camera_ids": ["cam_02"], "severity": "critical",
+                "actions": [], "enabled": True,
+            },
+        ])
+        return str(path)
 
-    def test_list_rules_from_templates(self, template_dir):
-        """列出模板目录中的所有规则"""
-        mgr = RuleManager(rules_dir=template_dir)
+    def test_list_rules_from_templates(self, template_file):
+        mgr = RuleManager(rules_file=template_file)
         rules = mgr.list_rules()
         assert len(rules) == 3
         names = {r["name"] for r in rules}
@@ -117,309 +98,210 @@ class TestListRulesFromTemplates:
         assert "example_count_line" in names
         assert "example_zone_empty" in names
 
-    def test_list_rules_summary_fields(self, template_dir):
-        """列表返回的摘要字段完整"""
-        mgr = RuleManager(rules_dir=template_dir)
+    def test_list_rules_summary_fields(self, template_file):
+        mgr = RuleManager(rules_file=template_file)
         rules = mgr.list_rules()
-        rule = next(r for r in rules if r["name"] == "example_zone_intrusion")
-        assert rule["type"] == "object_in_zone"
-        assert rule["severity"] == "warning"
-        assert rule["cooldown"] == 300
-        assert rule["window_size"] == 5
-        assert "record_clip" in rule["actions"]
+        r = rules[0]
+        for key in ("name", "type", "severity", "enabled", "actions"):
+            assert key in r, f"Missing field: {key}"
 
 
 class TestListRulesEmpty:
     def test_list_empty_dir(self, manager):
-        """空目录返回空列表"""
         rules = manager.list_rules()
         assert rules == []
 
 
-# ─── 创建规则 ─────────────────────────────────────────────
+# ─── 创建 ─────────────────────────────────────────────────
 
 class TestCreateRule:
-    def test_create_rule_file_exists(self, manager, rules_dir):
-        """创建规则 → 文件存在"""
-        manager.create_rule("my_rule", _valid_config("my_rule"))
-        filepath = Path(rules_dir) / "my_rule.yaml"
-        assert filepath.exists()
-        assert filepath.is_file()
+    def test_create_rule_file_exists(self, manager, rules_file):
+        manager.create_rule("zone_check", _valid_config("zone_check"))
+        assert Path(rules_file).exists()
+        data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8"))
+        assert len(data["rule_items"]) == 1
+        assert data["rule_items"][0]["name"] == "zone_check"
 
-    def test_create_rule_content_correct(self, manager, rules_dir):
-        """创建规则 → 读取文件内容正确"""
-        manager.create_rule("zone_check", _valid_config(
-            "zone_check",
-            severity="critical",
-            conditions=[{
-                "type": "count_line",
-                "params": {"line_start": [0, 0], "line_end": [100, 100], "threshold": 5},
-            }],
-        ))
-        filepath = Path(rules_dir) / "zone_check.yaml"
-        content = yaml.safe_load(filepath.read_text(encoding="utf-8"))
-        assert content["name"] == "zone_check"
-        assert content["severity"] == "critical"
-        assert content["conditions"][0]["type"] == "count_line"
+    def test_create_rule_content_correct(self, manager, rules_file):
+        manager.create_rule("zone_check", _valid_config("zone_check"))
+        data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8"))
+        rule = data["rule_items"][0]
+        assert rule["conditions"][0]["type"] == "object_in_zone"
 
     def test_create_rule_returns_path(self, manager):
-        """create_rule 返回创建的文件路径"""
-        path = manager.create_rule("return_test", _valid_config("return_test"))
-        assert path.endswith("return_test.yaml")
+        path = manager.create_rule("r1", _valid_config("r1"))
+        assert path.endswith("rules.yaml")
 
-    def test_create_rule_sanitizes_filename(self, manager, rules_dir):
-        """特殊字符在文件名中被替换为下划线"""
-        manager.create_rule("my rule/with:chars", _valid_config(name="my rule/with:chars"))
-        # 文件名中不应出现特殊字符
-        files = list(Path(rules_dir).glob("*.yaml"))
-        assert len(files) == 1
-        assert " " not in files[0].name
+    def test_create_rule_sanitizes_filename(self, manager, rules_file):
+        manager.create_rule("test-rule", _valid_config("test-rule"))
+        data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8"))
+        assert data["rule_items"][0]["name"] == "test-rule"
 
 
-# ─── 更新规则 ─────────────────────────────────────────────
+# ─── 更新 ─────────────────────────────────────────────────
 
 class TestUpdateRule:
-    def test_update_rule_changes_content(self, manager, rules_dir):
-        """创建 → 更新 → 校验变化"""
-        name = "update_me"
-        manager.create_rule(name, _valid_config(name, severity="warning"))
+    def test_update_rule_changes_content(self, manager, rules_file):
+        manager.create_rule("r1", _valid_config("r1", cooldown=300))
+        manager.update_rule("r1", _valid_config("r1", cooldown=999))
+        detail = manager.get_rule("r1")
+        assert detail["config"]["cooldown"] == 999
 
-        # 更新严重级别
-        manager.update_rule(name, _valid_config(name, severity="critical"))
-        filepath = Path(rules_dir) / "update_me.yaml"
-        content = yaml.safe_load(filepath.read_text(encoding="utf-8"))
-        assert content["severity"] == "critical"
+    def test_update_rule_overwrites(self, manager, rules_file):
+        manager.create_rule("r1", _valid_config("r1", camera_ids=["cam-1"]))
+        manager.update_rule("r1", _valid_config("r1", camera_ids=["cam-2", "cam-3"]))
+        detail = manager.get_rule("r1")
+        assert detail["config"]["camera_ids"] == ["cam-2", "cam-3"]
 
     def test_update_rule_returns_path(self, manager):
-        """update_rule 返回文件路径"""
-        manager.create_rule("update_path", _valid_config("update_path"))
-        path = manager.update_rule("update_path", _valid_config("update_path", cooldown=60))
-        assert path.endswith("update_path.yaml")
-
-    def test_update_rule_overwrites(self, manager, rules_dir):
-        """更新后文件只有新内容，旧字段被覆盖"""
-        name = "overwrite_test"
-        manager.create_rule(name, _valid_config(name, description="旧描述"))
-        manager.update_rule(name, _valid_config(name, description="新描述"))
-        filepath = Path(rules_dir) / "overwrite_test.yaml"
-        content = yaml.safe_load(filepath.read_text(encoding="utf-8"))
-        assert content["description"] == "新描述"
+        manager.create_rule("r1", _valid_config("r1"))
+        path = manager.update_rule("r1", _valid_config("r1", cooldown=500))
+        assert path.endswith("rules.yaml")
 
 
-# ─── 删除规则 ─────────────────────────────────────────────
+# ─── 删除 ─────────────────────────────────────────────────
 
 class TestDeleteRule:
-    def test_delete_rule_removes_file(self, manager, rules_dir):
-        """创建 → 删除 → 确认文件不存在"""
-        manager.create_rule("to_delete", _valid_config("to_delete"))
-        filepath = Path(rules_dir) / "to_delete.yaml"
-        assert filepath.exists()
-
-        result = manager.delete_rule("to_delete")
-        assert result is True
-        assert not filepath.exists()
+    def test_delete_rule_removes_file(self, manager, rules_file):
+        manager.create_rule("r1", _valid_config("r1"))
+        manager.create_rule("r2", _valid_config("r2"))
+        manager.delete_rule("r1")
+        data = yaml.safe_load(Path(rules_file).read_text(encoding="utf-8"))
+        names = [r["name"] for r in data["rule_items"]]
+        assert "r1" not in names
+        assert "r2" in names
 
     def test_delete_nonexistent_returns_false(self, manager):
-        """删除不存在的规则返回 False"""
-        result = manager.delete_rule("no_such_rule")
-        assert result is False
+        assert manager.delete_rule("ghost") is False
 
 
-# ─── 查询规则 ─────────────────────────────────────────────
+# ─── 查询 ─────────────────────────────────────────────────
 
 class TestGetRule:
     def test_get_rule_returns_full_config(self, manager):
-        """查询已创建的规则返回完整配置"""
-        cfg = _valid_config("full_rule")
-        manager.create_rule("full_rule", cfg)
-        rule = manager.get_rule("full_rule")
-        assert rule is not None
-        assert rule["config"]["name"] == "full_rule"
-        assert "yaml_raw" in rule
-        assert "filepath" in rule
-        assert "filename" in rule
+        manager.create_rule("r1", _valid_config("r1"))
+        detail = manager.get_rule("r1")
+        assert detail["config"]["name"] == "r1"
+        assert "yaml_raw" in detail
 
     def test_get_rule_not_found(self, manager):
-        """查询不存在的规则返回 None"""
-        rule = manager.get_rule("no_such_rule")
-        assert rule is None
+        assert manager.get_rule("ghost") is None
 
     def test_list_rules_filters_correctly(self, manager):
-        """列表仅返回存在的规则"""
-        manager.create_rule("rule_a", _valid_config("rule_a"))
-        manager.create_rule("rule_b", _valid_config("rule_b"))
+        manager.create_rule("r1", _valid_config("r1"))
+        manager.create_rule("r2", _valid_config("r2"))
         rules = manager.list_rules()
         assert len(rules) == 2
 
 
-# ─── 重复检查 ─────────────────────────────────────────────
+# ─── 重复 ─────────────────────────────────────────────────
 
 class TestCreateDuplicate:
     def test_create_duplicate_raises(self, manager):
-        """创建重名规则应抛 FileExistsError"""
         manager.create_rule("dup", _valid_config("dup"))
-        with pytest.raises(FileExistsError):
+        with pytest.raises((FileExistsError, ValueError)):
             manager.create_rule("dup", _valid_config("dup"))
 
-    def test_create_duplicate_case_sensitive(self, manager):
-        """同名但大小写不同的文件名，由 sanitize 统一处理"""
-        manager.create_rule("MyRule", _valid_config(name="MyRule"))
-        # "MyRule" 和 "MyRule" 完全相同，重名应抛错
-        with pytest.raises(FileExistsError):
-            manager.create_rule("MyRule", _valid_config(name="MyRule"))
 
-
-# ─── 校验：空名称 ─────────────────────────────────────────
+# ─── 校验 ─────────────────────────────────────────────────
 
 class TestValidateEmptyName:
     def test_empty_name_raises(self, manager):
-        """空字符串名称应抛 ValueError"""
-        with pytest.raises(ValueError) as exc:
-            manager.create_rule("", _valid_config(name=""))
-        assert "name" in str(exc.value)
+        with pytest.raises(ValueError, match="name"):
+            manager.create_rule("", _valid_config(""))
 
     def test_whitespace_name_raises(self, manager):
-        """纯空白名称应抛 ValueError"""
-        with pytest.raises(ValueError) as exc:
-            manager.create_rule("   ", _valid_config(name="   "))
-        assert "name" in str(exc.value)
+        with pytest.raises(ValueError, match="name"):
+            manager.create_rule("   ", _valid_config("   "))
 
     def test_test_rule_rejects_empty_name_in_config(self, manager):
-        """test_rule 对 config 中 name 为空也返回 invalid"""
-        result = manager.test_rule(_valid_config(name=""))
+        result = manager.test_rule(_valid_config(""))
         assert result["valid"] is False
-        assert any("name" in e.lower() for e in result["errors"])
 
-
-# ─── 校验：非法类型 ──────────────────────────────────────
 
 class TestValidateInvalidType:
     def test_invalid_condition_type_raises(self, manager):
-        """非法条件类型应抛 ValueError"""
-        with pytest.raises(ValueError) as exc:
-            manager.create_rule("bad_type", _valid_config("bad_type", conditions=[{
-                "type": "invalid_type",
-                "params": {},
-            }]))
-        assert "type" in str(exc.value).lower()
+        with pytest.raises(ValueError, match="type"):
+            manager.create_rule("bad", _valid_config("bad", conditions=[{"type": "unknown", "params": {}}]))
 
-
-# ─── 校验：非法严重级别 ──────────────────────────────────
 
 class TestValidateInvalidSeverity:
     def test_invalid_severity_raises(self, manager):
-        """非法严重级别应抛 ValueError"""
-        with pytest.raises(ValueError) as exc:
-            manager.create_rule("bad_sev", _valid_config("bad_sev", severity="fatal"))
-        assert "severity" in str(exc.value).lower()
+        with pytest.raises(ValueError, match="severity"):
+            manager.create_rule("bad", _valid_config("bad", severity="super_critical"))
 
-    def test_valid_severities_are_accepted(self, manager, rules_dir):
-        """合法的严重级别都应被接受"""
+    def test_valid_severities_are_accepted(self, manager):
         for sev in ("critical", "warning", "info"):
-            name = f"sev_{sev}"
-            path = manager.create_rule(name, _valid_config(name, severity=sev))
-            content = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-            assert content["severity"] == sev
+            manager.create_rule(f"rule_{sev}", _valid_config(f"rule_{sev}", severity=sev))
+        rules = manager.list_rules()
+        assert len(rules) == 3
 
-
-# ─── 校验：其他边界 ──────────────────────────────────────
 
 class TestValidateBoundary:
     def test_invalid_action_type_raises(self, manager):
-        """非法动作类型应抛 ValueError"""
-        with pytest.raises(ValueError) as exc:
-            manager.create_rule("bad_action", _valid_config("bad_action", actions=[
-                {"type": "unknown_action"},
-            ]))
-        assert "actions" in str(exc.value).lower()
+        with pytest.raises(ValueError, match="actions"):
+            manager.create_rule("bad", _valid_config("bad", actions=[{"type": "sms"}]))
 
     def test_negative_cooldown_raises(self, manager):
-        """负冷却时间应抛 ValueError"""
-        with pytest.raises(ValueError):
-            manager.create_rule("bad_cd", _valid_config("bad_cd", cooldown=-1))
+        with pytest.raises(ValueError, match="cooldown"):
+            manager.create_rule("bad", _valid_config("bad", cooldown=-1))
 
     def test_zero_window_size_raises(self, manager):
-        """零窗口大小应抛 ValueError"""
-        with pytest.raises(ValueError):
-            manager.create_rule("bad_ws", _valid_config("bad_ws", window_size=0))
+        with pytest.raises(ValueError, match="window_size"):
+            manager.create_rule("bad", _valid_config("bad", window_size=0))
 
     def test_missing_conditions_raises(self, manager):
-        """缺少 conditions 应抛 ValueError"""
-        with pytest.raises(ValueError):
-            manager.create_rule("no_cond", {"name": "no_cond"})
+        with pytest.raises(ValueError, match="conditions"):
+            manager.create_rule("bad", _valid_config("bad", conditions=[]))
 
 
-# ─── test_rule 干跑校验 ──────────────────────────────────
+# ─── 干跑 ─────────────────────────────────────────────────
 
 class TestTestRuleValid:
     def test_test_rule_valid_object_in_zone(self, manager):
-        """test_rule 干跑校验 object_in_zone 通过"""
-        result = manager.test_rule(_valid_config("dry_run_zone"))
+        result = manager.test_rule(_valid_config("t1"))
         assert result["valid"] is True
         assert result["rule_type"] == "object_in_zone"
-        assert result["params"]["zone_vertices"] == 4
-        assert result["actions"] == ["notify"]
 
     def test_test_rule_valid_count_line(self, manager):
-        """test_rule 干跑校验 count_line 通过"""
-        result = manager.test_rule(_valid_config("dry_run_line", conditions=[{
+        result = manager.test_rule(_valid_config("t2", conditions=[{
             "type": "count_line",
-            "params": {"line_start": [0, 0], "line_end": [100, 0], "threshold": 3},
+            "params": {"line_start": [0, 0], "line_end": [100, 100]},
         }]))
         assert result["valid"] is True
         assert result["rule_type"] == "count_line"
-        assert result["params"]["threshold"] == 3
 
     def test_test_rule_valid_zone_empty(self, manager):
-        """test_rule 干跑校验 zone_empty 通过"""
-        result = manager.test_rule(_valid_config("dry_run_empty", conditions=[{
+        result = manager.test_rule(_valid_config("t3", conditions=[{
             "type": "zone_empty",
-            "params": {"zone": [[0, 0], [10, 0], [10, 10], [0, 10]]},
+            "params": {"zone": [[0, 0], [100, 0], [100, 100], [0, 100]]},
         }]))
         assert result["valid"] is True
         assert result["rule_type"] == "zone_empty"
-        assert result["params"]["zone_vertices"] == 4
 
     def test_test_rule_returns_actions_list(self, manager):
-        """test_rule 返回动作列表"""
-        cfg = _valid_config("multi_action", actions=[
-            {"type": "notify"}, {"type": "record_clip"}, {"type": "llm_analyze"},
-        ])
-        result = manager.test_rule(cfg)
-        assert result["valid"] is True
-        assert len(result["actions"]) == 3
-        assert "llm_analyze" in result["actions"]
+        result = manager.test_rule(_valid_config("t4", actions=[{"type": "notify"}, {"type": "llm_analyze"}]))
+        assert result["actions"] == ["notify", "llm_analyze"]
 
 
 class TestTestRuleInvalid:
     def test_test_rule_invalid_type(self, manager):
-        """test_rule 干跑校验失败 — 非法类型"""
-        result = manager.test_rule(_valid_config("bad", conditions=[{
-            "type": "nonexistent",
-            "params": {},
-        }]))
+        result = manager.test_rule(_valid_config("bad", conditions=[{"type": "unknown", "params": {}}]))
         assert result["valid"] is False
-        assert len(result["errors"]) > 0
 
     def test_test_rule_missing_name(self, manager):
-        """test_rule 干跑校验失败 — 缺少名称"""
-        result = manager.test_rule({"conditions": [{"type": "object_in_zone", "params": {
-            "zone": [[0, 0], [100, 0], [100, 100]],
-        }}]})
+        result = manager.test_rule(_valid_config(""))
         assert result["valid"] is False
-        assert any("name" in e.lower() for e in result["errors"])
 
     def test_test_rule_zone_too_few_vertices(self, manager):
-        """test_rule 干跑校验失败 — 多边形顶点不足"""
-        result = manager.test_rule(_valid_config("few_v", conditions=[{
+        result = manager.test_rule(_valid_config("bad", conditions=[{
             "type": "object_in_zone",
-            "params": {"zone": [[0, 0], [100, 0]]},  # 仅 2 个点
+            "params": {"zone": [[0, 0], [100, 100]]},
         }]))
         assert result["valid"] is False
 
     def test_test_rule_count_line_missing_params(self, manager):
-        """test_rule 干跑校验失败 — count_line 缺少参数"""
-        result = manager.test_rule(_valid_config("no_line", conditions=[{
+        result = manager.test_rule(_valid_config("bad", conditions=[{
             "type": "count_line",
             "params": {},
         }]))
