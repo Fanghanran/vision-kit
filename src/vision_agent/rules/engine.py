@@ -851,7 +851,6 @@ class RuleEngine:
                 mtime = rules_yaml.stat().st_mtime
                 if mtime > self._file_mtimes.get(str(rules_yaml), 0):
                     logger.info("rules_yaml_changed action=reload")
-                    old_names = set(self._rules.keys())
                     with self._lock:
                         self._rules.clear()
                         self._rule_sources.clear()
