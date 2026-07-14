@@ -125,6 +125,89 @@ def setup_logging(config: dict, log_level: str | None = None) -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
+# ─── 启动环境检查 ──────────────────────────────────────────────
+
+
+def check_environment(config: dict) -> list[str]:
+    """启动时环境检查（architecture.md 12.6 节）
+
+    检查目录权限、文件存在性、磁盘可写等。
+    返回错误列表，空列表表示全部通过。
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    system = config.get("system", {})
+    data_dir = system.get("data_dir", "data")
+    log_dir = system.get("log_dir", "logs")
+
+    # 1. 检查数据目录可写
+    data_path = Path(data_dir)
+    try:
+        data_path.mkdir(parents=True, exist_ok=True)
+        # 测试可写
+        test_file = data_path / ".write_test"
+        test_file.write_text("test", encoding="utf-8")
+        test_file.unlink()
+    except OSError as e:
+        errors.append(f"数据目录不可写: {data_dir} ({e})")
+
+    # 2. 检查日志目录可写
+    log_path = Path(log_dir)
+    try:
+        log_path.mkdir(parents=True, exist_ok=True)
+        test_file = log_path / ".write_test"
+        test_file.write_text("test", encoding="utf-8")
+        test_file.unlink()
+    except OSError as e:
+        errors.append(f"日志目录不可写: {log_dir} ({e})")
+
+    # 3. 检查 .env 文件（警告，非阻断）
+    env_file = Path(".env")
+    if not env_file.exists():
+        warnings.append(".env 文件不存在，敏感配置（API Key、密码等）需通过环境变量设置")
+    elif env_file.stat().st_size == 0:
+        warnings.append(".env 文件为空")
+
+    # 4. 检查模型文件存在
+    detector = config.get("detector", {})
+    model_path = detector.get("model_path", "")
+    if model_path and not Path(model_path).exists():
+        errors.append(f"模型文件不存在: {model_path}")
+
+    # 5. 检查 GPU 可用性（警告）
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            warnings.append("CUDA 不可用，将使用 CPU 推理（速度慢 5-10 倍）")
+    except ImportError:
+        warnings.append("PyTorch 未安装，GPU 推理不可用")
+
+    # 6. 检查 FFmpeg 可用性（警告）
+    import shutil
+
+    if not shutil.which("ffmpeg"):
+        warnings.append("FFmpeg 未安装，视频录制功能不可用")
+
+    # 7. 检查 configs/cameras/ 目录权限（仅 Linux/macOS）
+    if os.name != "nt":  # 非 Windows
+        cameras_dir = Path("configs/cameras")
+        if cameras_dir.exists():
+            mode = oct(cameras_dir.stat().st_mode)[-3:]
+            if mode != "600":
+                warnings.append(
+                    f"configs/cameras/ 目录权限过宽（{mode}），建议 chmod 600"
+                )
+
+    # 输出警告
+    for w in warnings:
+        logger.warning("env_check_warning msg=%s", w) if logger.hasHandlers() else None
+        print(f"WARNING: {w}", file=sys.stderr)
+
+    return errors
+
+
 # ─── 组件组装 ────────────────────────────────────────────────
 
 
@@ -184,7 +267,7 @@ def assemble_components(config: dict) -> tuple:
     from vision_agent.rules.engine import RuleEngine
 
     rules_config = config.get("rules", {})
-    rule_engine = RuleEngine(config=rules_config, cache=cache)
+    rule_engine = RuleEngine(config=rules_config, cache=cache, database=database)
     rules_dir = rules_config.get("rules_dir", "configs/rules")
     if Path(rules_dir).exists():
         rule_engine.load_rules(rules_dir)
@@ -217,7 +300,7 @@ def assemble_components(config: dict) -> tuple:
                 enabled=True,
                 model=llm_config_dict.get("model", "gpt-4o-mini"),
             )
-            llm_analyzer = LLMAnalyzer(config=llm_config, provider=provider)
+            llm_analyzer = LLMAnalyzer(config=llm_config, provider=provider, database=database)
             logger.info(
                 "component_init component=llm_analyzer model=%s", provider_config.model
             )
@@ -241,7 +324,7 @@ def assemble_components(config: dict) -> tuple:
             max_retries=webhook_cfg.get("max_retries", 2),
             timeout=webhook_cfg.get("timeout", 10),
         )
-        notifiers.append(WebhookNotifier(wh_config))
+        notifiers.append(WebhookNotifier(wh_config, database=database))
         logger.info("component_init component=webhook_notifier type=%s", wh_config.type)
 
     email_cfg = config.get("notification", {}).get("email", {})
@@ -253,7 +336,7 @@ def assemble_components(config: dict) -> tuple:
             smtp_pass=email_cfg.get("password", ""),
             to_addrs=email_cfg.get("recipients", []),
         )
-        notifiers.append(EmailNotifier(em_config))
+        notifiers.append(EmailNotifier(em_config, database=database))
         logger.info("component_init component=email_notifier")
 
     # 步骤 8：Pipeline
@@ -405,6 +488,14 @@ def main() -> int:
     # 初始化日志
     setup_logging(config, args.log_level)
     logger.info("system_starting version=%s", __version__)
+
+    # 启动环境检查
+    env_errors = check_environment(config)
+    if env_errors:
+        for err in env_errors:
+            logger.error("env_check_failed msg=%s", err)
+            print(f"ERROR: {err}", file=sys.stderr)
+        return 1
 
     # 组装组件
     try:

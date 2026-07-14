@@ -793,3 +793,101 @@ P3-1 ~ P3-7 (优化)
 | P2 | 3 个后端文件 + 5 个前端文件 |
 | P3 | 3 个后端文件 + 8 个前端文件 |
 | **总计** | **12 个后端 + 17 个前端 = 29 个文件** |
+
+---
+
+## 第二版 — 运维部署 + 架构演进
+
+> 第一版功能已全部完成（P0~P4 + 补充项，287 测试全绿）。第二版聚焦运维部署和架构扩展。
+
+### 第二版总览
+
+| 项 | 主题 | 优先级 | 说明 |
+|---|------|--------|------|
+| V2-1 | systemd 部署 | 高 | 服务文件 + 启动脚本 |
+| V2-2 | 数据备份 | 高 | SQLite 备份 + 截图/视频归档 |
+| V2-3 | Docker 容器化 | 中 | Dockerfile + docker-compose |
+| V2-4 | HTTPS 反代 | 中 | Nginx + Let's Encrypt |
+| V2-5 | PostgreSQL 迁移 | 低 | SQLite → PostgreSQL |
+| V2-6 | RAG 知识检索 | 低 | ChromaDB 向量数据库 |
+| V2-7 | 端-云架构 | 低 | 边缘设备 + 服务器协同 |
+
+---
+
+### V2-1 systemd 部署
+
+**目标**：生产环境一键部署，支持开机自启、自动重启、日志管理。
+
+**文件**：`deploy/vision-agent.service`
+
+**配套**：
+- `deploy/install.sh` — 一键安装脚本
+- `deploy/uninstall.sh` — 卸载脚本
+
+---
+
+### V2-2 数据备份
+
+**目标**：自动备份数据库和媒体文件，支持手动触发和定时执行。
+
+**文件**：`scripts/backup.sh`
+
+**备份内容**：
+| 数据 | 备份方式 | 保留策略 |
+|------|---------|---------|
+| SQLite 数据库 | `sqlite3 .backup` 原子备份 | 保留最近 30 天 |
+| 截图 | 按日期压缩归档 | 保留 90 天 |
+| 视频片段 | 按日期压缩归档 | 保留 30 天 |
+| 配置文件 | 备份到 backup/ 目录 | 保留最近 10 份 |
+
+---
+
+### V2-3 Docker 容器化
+
+**目标**：一键部署，跨平台运行，支持 GPU 直通。
+
+**文件**：`Dockerfile` + `docker-compose.yml` + `.dockerignore`
+
+---
+
+### V2-4 HTTPS 反代
+
+**目标**：Nginx 反向代理 + Let's Encrypt 自动证书。
+
+**文件**：`deploy/nginx/vision-agent.conf` + `scripts/setup-ssl.sh`
+
+---
+
+### V2-5 PostgreSQL 迁移
+
+**目标**：SQLite → PostgreSQL，支持多用户并发。
+
+**文件**：`scripts/migrate_sqlite_to_postgres.py` + `src/vision_agent/storage/postgres_backend.py`
+
+---
+
+### V2-6 RAG 知识检索
+
+**目标**：让 LLM 分析参考历史案例和 SOP。
+
+**文件**：`src/vision_agent/storage/vector_store.py` + `src/vision_agent/llm/rag.py`
+
+---
+
+### V2-7 端-云架构
+
+**目标**：边缘设备做推理，服务器做规则+LLM+通知。
+
+**扩展点**：`RemoteDetector` 实现 + `source_type: edge` 配置
+
+---
+
+### 第二版实施建议
+
+| 阶段 | 内容 | 预估工作量 |
+|------|------|-----------|
+| Phase 1 | V2-1 systemd + V2-2 备份 | 1 天 |
+| Phase 2 | V2-3 Docker + V2-4 HTTPS | 2 天 |
+| Phase 3 | V2-5 PostgreSQL | 2 天 |
+| Phase 4 | V2-6 RAG | 3 天 |
+| Phase 5 | V2-7 端-云架构 | 5 天 |

@@ -24,6 +24,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { initMultiTabSync } from '@/composables/useMultiTabSync'
 import { useAuthStore } from '@/stores/auth'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
@@ -38,6 +39,8 @@ const isLoginPage = computed(() => route.name === 'Login')
 const isStandalone = computed(() => ['Profile'].includes(route.name as string))
 
 onMounted(async () => {
+  // 初始化多标签页同步
+  initMultiTabSync()
   await authStore.fetchMe()
   connect()
   // 读取暗色模式偏好

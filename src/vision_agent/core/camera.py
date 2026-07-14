@@ -18,6 +18,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 from queue import Empty, Full, Queue
 
 import numpy as np
@@ -152,10 +153,12 @@ class CameraThread:
         config: CameraConfig,
         frame_queue: FrameQueue,
         cam_logger: logging.Logger | None = None,
+        database: Any | None = None,
     ):
         self._config = config
         self._frame_queue = frame_queue
         self._log = cam_logger or logger
+        self._database = database
 
         # 状态
         self._status = CameraStatus.CONNECTING
@@ -370,6 +373,12 @@ class CameraThread:
                 self._status = CameraStatus.DISCONNECTED
 
             if not self._running:
+                break
+
+            # 检查控制面板开关：自动重连
+            if self._database and not self._database.get_control_value("camera.auto_reconnect"):
+                self._log.info("camera_auto_reconnect_disabled camera=%s", self._config.camera_id)
+                self._status = CameraStatus.DISCONNECTED
                 break
 
             if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:

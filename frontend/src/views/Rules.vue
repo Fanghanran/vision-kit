@@ -16,7 +16,8 @@
 
     <!-- ── CHECK：浏览规则 ── -->
     <template v-if="mode === 'check'">
-      <el-table :data="rules" v-loading="loading" stripe empty-text="暂无规则，点击「创建规则」添加">
+      <el-card shadow="hover">
+        <el-table :data="paginatedRules" v-loading="loading" stripe empty-text="暂无规则，点击「创建规则」添加">
         <el-table-column prop="name" label="名称" min-width="160">
           <template #default="{ row }">
             <el-button type="primary" link @click="viewDetail(row)">{{ row.name }}</el-button>
@@ -53,9 +54,13 @@
             <span v-else class="text-muted">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="70">
+        <el-table-column label="状态" width="80">
           <template #default="{ row }">
-            <el-switch :model-value="row.enabled" size="small" disabled />
+            <el-switch
+              :model-value="row.enabled"
+              size="small"
+              @change="(val: boolean) => toggleEnabled(row, val)"
+            />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
@@ -69,6 +74,18 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 分页 -->
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50]"
+        :total="filteredRules.length"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="onPageSizeChange"
+        style="margin-top: 16px; justify-content: flex-end"
+      />
+      </el-card>
     </template>
 
     <!-- ── WRITE：创建/编辑 ── -->
@@ -269,7 +286,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import { rulesApi, type RuleSummary, type RuleDetail, type RuleCreatePayload } from '@/api/rules'
@@ -283,6 +300,21 @@ const mode = ref<'check' | 'write' | 'test'>('check')
 
 const rules = ref<RuleSummary[]>([])
 const loading = ref(false)
+
+// 分页
+const page = ref(1)
+const pageSize = ref(10)
+
+const filteredRules = computed(() => rules.value) // 后续可加筛选
+
+const paginatedRules = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredRules.value.slice(start, start + pageSize.value)
+})
+
+function onPageSizeChange() {
+  page.value = 1
+}
 
 async function fetchRules() {
   loading.value = true
@@ -501,6 +533,30 @@ async function handleSave() {
 }
 
 // ─── 删除 ──────────────────────────────────────────────────────
+
+async function toggleEnabled(row: RuleSummary, val: boolean) {
+  try {
+    // 加载完整规则配置，只修改 enabled 字段后更新
+    const detail = await rulesApi.get(row.name)
+    const cfg = detail.config
+    const payload = {
+      name: cfg.name,
+      conditions: cfg.conditions || [],
+      severity: cfg.severity || 'warning',
+      actions: cfg.actions || [],
+      cooldown: cfg.cooldown,
+      window_size: cfg.window_size,
+      camera_ids: cfg.camera_ids,
+      description: cfg.description,
+      enabled: val,
+    }
+    await rulesApi.update(row.name, payload)
+    row.enabled = val
+    ElMessage.success(val ? '规则已启用' : '规则已停用')
+  } catch (e: any) {
+    ElMessage.error('操作失败: ' + (e.response?.data?.detail || e.message))
+  }
+}
 
 async function handleDelete(name: string) {
   try {

@@ -24,7 +24,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -126,9 +126,11 @@ class LLMAnalyzer:
         self,
         config: LLMConfig,
         provider: LLMProviderProtocol | None = None,
+        database: Any | None = None,
     ) -> None:
         self._config = config
         self._provider = provider
+        self._database = database
         self._system_prompt = config.system_prompt or _DEFAULT_SYSTEM_PROMPT
 
         # 统计
@@ -204,6 +206,9 @@ class LLMAnalyzer:
             LLMAnalysis 或 None（LLM 不可用时）
         """
         if not self._config.enabled:
+            return None
+        # 检查控制面板开关
+        if self._database and not self._database.get_control_value("llm.enabled"):
             return None
         if self._provider is None:
             return None

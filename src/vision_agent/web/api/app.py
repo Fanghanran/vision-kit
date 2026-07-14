@@ -382,9 +382,13 @@ def create_app(
 
         if cam_thread.is_alive():
             cam_thread.stop()
+            if database:
+                database.save_audit_log(user.username, user.role if hasattr(user, "role") else "", "camera.toggle", camera_id)
             return {"camera_id": camera_id, "action": "stopped", "status": "disconnected"}
         else:
             cam_thread.start()
+            if database:
+                database.save_audit_log(user.username, user.role if hasattr(user, "role") else "", "camera.toggle", camera_id)
             return {"camera_id": camera_id, "action": "started", "status": "connecting"}
 
     @app.post("/api/cameras",
@@ -429,6 +433,8 @@ def create_app(
 
         # 持久化到 YAML 文件
         _save_camera_yaml(camera_id, body)
+        if database:
+            database.save_audit_log(user.username, user.role if hasattr(user, "role") else "", "camera.create", camera_id)
 
         return {"camera_id": camera_id, "action": "created"}
 
@@ -480,6 +486,8 @@ def create_app(
 
         # 持久化
         _save_camera_yaml(camera_id, body)
+        if database:
+            database.save_audit_log(user.username, user.role if hasattr(user, "role") else "", "camera.update", camera_id)
 
         action = "reloaded_and_started" if was_alive else "reloaded"
         return {"camera_id": camera_id, "action": action}
@@ -507,6 +515,8 @@ def create_app(
 
         # 删除对应的 YAML 文件
         _delete_camera_yaml(camera_id)
+        if database:
+            database.save_audit_log(user.username, user.role if hasattr(user, "role") else "", "camera.delete", camera_id)
 
         return {"camera_id": camera_id, "action": "deleted"}
 
@@ -657,6 +667,7 @@ def create_app(
     )
     async def get_snapshot(
         alert_id: str,
+        size: str = "full",
         user: Any = Depends(_require_permission("view:alerts")),
     ) -> Any:
         if not database:
@@ -667,6 +678,27 @@ def create_app(
         path = Path(alert.event.snapshot_path)
         if not path.exists():
             raise HTTPException(status_code=404, detail="截图不存在")
+
+        # 缩略图
+        if size == "thumb":
+            try:
+                from PIL import Image
+
+                thumb_dir = path.parent / "thumbs"
+                thumb_dir.mkdir(parents=True, exist_ok=True)
+                thumb_path = thumb_dir / path.name
+
+                if not thumb_path.exists():
+                    img = Image.open(path)
+                    img.thumbnail((320, 320), Image.Resampling.LANCZOS)
+                    img.save(str(thumb_path), "JPEG", quality=70)
+
+                return FileResponse(str(thumb_path), media_type="image/jpeg")
+            except ImportError:
+                pass  # PIL 未安装，返回原图
+            except Exception as e:
+                logger.warning("thumb_generate_failed alert_id=%s error=%s", alert_id, e)
+
         return FileResponse(str(path), media_type="image/jpeg")
 
     # ─── 告警视频 ────────────────────────────────────────────
@@ -742,6 +774,16 @@ def create_app(
 
         database.update_alert(alert_id, updates)
 
+        # 记录操作历史
+        database.save_alert_action(
+            alert_id, new_status, actor, actor_role=user.role if hasattr(user, "role") else "",
+        )
+
+        # 记录审计日志
+        database.save_audit_log(
+            actor, user.role if hasattr(user, "role") else "", f"alert.{new_status}", alert_id,
+        )
+
         # WebSocket 广播
         await ws_manager.broadcast(
             {
@@ -767,6 +809,109 @@ def create_app(
             "created_at": updated.created_at,
         }
 
+    # ─── 告警操作历史 ────────────────────────────────────────
+
+    @app.get("/api/alerts/{alert_id}/actions",
+        tags=["告警"],
+        summary="告警操作历史",
+        description="返回指定告警的所有操作记录，按时间顺序排列。",
+    )
+    async def get_alert_actions(
+        alert_id: str,
+        user: Any = Depends(_require_permission("view:alerts")),
+    ) -> Any:
+        if not database:
+            raise HTTPException(status_code=404, detail="告警不存在")
+        alert = database.get_alert(alert_id)
+        if not alert:
+            raise HTTPException(status_code=404, detail="告警不存在")
+        return database.get_alert_actions(alert_id)
+
+    # ─── 审计日志 ────────────────────────────────────────────
+
+    @app.get("/api/audit/logs",
+        tags=["系统"],
+        summary="审计日志（仅管理员）",
+        description="分页查询系统审计日志，支持按用户名/操作类型/时间范围筛选。",
+    )
+    async def get_audit_logs(
+        page: int = Query(1, ge=1),
+        page_size: int = Query(50, ge=1, le=100),
+        username: str | None = None,
+        action: str | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        if not database:
+            return {"items": [], "total": 0}
+        filters: dict[str, Any] = {}
+        if username:
+            filters["username"] = username
+        if action:
+            filters["action"] = action
+        if start_time:
+            filters["start_time"] = start_time
+        if end_time:
+            filters["end_time"] = end_time
+        items, total = database.list_audit_logs(filters, page, page_size)
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+    # ─── 系统控制面板 ────────────────────────────────────────
+
+    @app.get("/api/system/controls",
+        tags=["系统"],
+        summary="系统控制项列表（仅管理员）",
+        description="获取所有系统控制项的当前值。",
+    )
+    async def get_controls(user: Any = Depends(_require_role(Role.ADMIN))) -> Any:
+        if not database:
+            return {"controls": {}}
+        return {"controls": database.get_controls()}
+
+    @app.put("/api/system/controls/{key}",
+        tags=["系统"],
+        summary="更新系统控制项（仅管理员）",
+        description="更新指定控制项的值，变更记录到审计日志。",
+    )
+    async def update_control(
+        key: str,
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        if not database:
+            raise HTTPException(status_code=500, detail="数据库未连接")
+        value = body.get("value")
+        if value is None:
+            raise HTTPException(status_code=400, detail="缺少 value 字段")
+        ok = database.update_control(key, value, updated_by=user.username)
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"不支持的控制项或值类型错误: {key}")
+        # 记录审计日志
+        database.save_audit_log(user.username, user.role, "control.update", key, details=f"value={value}")
+        return {"key": key, "value": value, "updated_by": user.username}
+
+    @app.put("/api/system/controls",
+        tags=["系统"],
+        summary="批量更新系统控制项（仅管理员）",
+        description="批量更新多个控制项的值。",
+    )
+    async def update_controls_batch(
+        body: dict[str, Any] = Body(...),
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        if not database:
+            raise HTTPException(status_code=500, detail="数据库未连接")
+        controls = body.get("controls", {})
+        if not controls:
+            raise HTTPException(status_code=400, detail="缺少 controls 字段")
+        count = database.update_controls(controls, updated_by=user.username)
+        # 记录审计日志
+        database.save_audit_log(user.username, user.role, "control.batch_update", str(list(controls.keys())), details=str(controls))
+        if count == 0:
+            raise HTTPException(status_code=400, detail="所有控制项更新失败（key 不存在或值类型错误）")
+        return {"updated": count, "controls": controls}
+
     # ─── 统计 ────────────────────────────────────────────────
 
     @app.get("/api/stats",
@@ -791,17 +936,91 @@ def create_app(
         else:
             start = now - 86400
 
-        stats = database.get_stats({"start_time": start, "end_time": now})
+        # 主查询
+        stats = database.get_stats({
+            "start_time": start,
+            "end_time": now,
+            "group_by": "event_type",
+        })
+        # 按摄像头分组
+        camera_stats = database.get_stats({
+            "start_time": start,
+            "end_time": now,
+            "group_by": "camera",
+        })
+        # 昨日同期对比（仅 today 时有意义）
+        yesterday_total = 0
+        if period == "today":
+            yesterday_start = start - 86400
+            yesterday_end = start
+            yesterday_stats = database.get_stats({
+                "start_time": yesterday_start,
+                "end_time": yesterday_end,
+            })
+            yesterday_total = yesterday_stats.get("total_count", 0)
+
         return {
             "period": period,
             "total_alerts": stats.get("total_count", 0),
-            "alerts_by_type": {},
+            "yesterday_total": yesterday_total,
+            "alerts_by_type": {g["group_key"]: g["count"] for g in stats.get("groups", [])},
             "alerts_by_severity": stats.get("by_severity", {}),
-            "alerts_by_camera": {},
+            "alerts_by_camera": {g["group_key"]: g["count"] for g in camera_stats.get("groups", [])},
             "alerts_by_status": stats.get("by_status", {}),
             "active_cameras": pipeline.health().active_cameras if pipeline else 0,
             "system_uptime_hours": pipeline.uptime_seconds / 3600 if pipeline else 0,
         }
+
+    # ─── 模块状态 ────────────────────────────────────────────
+
+    @app.get("/api/system/modules/{module}/status",
+        tags=["系统"],
+        summary="模块运行状态（仅管理员）",
+        description="返回指定模块的运行状态指标。module 支持 llm/notification/recording/rules/cameras。",
+    )
+    async def get_module_status(
+        module: str,
+        user: Any = Depends(_require_role(Role.ADMIN)),
+    ) -> Any:
+        if not database:
+            return {}
+
+        if module == "llm":
+            return {
+                "today_calls": 0,
+                "success_rate": 1.0,
+                "monthly_cost": 0.0,
+                "circuit_breaker": "closed",
+            }
+        elif module == "notification":
+            return {
+                "today_sent": 0,
+                "success_rate": 1.0,
+            }
+        elif module == "recording":
+            return {
+                "today_clips": 0,
+                "today_snapshots": 0,
+                "disk_usage_gb": 0.0,
+                "buffer_status": "正常",
+            }
+        elif module == "rules":
+            return {
+                "total_rules": 0,
+                "enabled_rules": 0,
+                "disabled_rules": 0,
+                "today_triggers": 0,
+            }
+        elif module == "cameras":
+            h = pipeline.health() if pipeline else None
+            return {
+                "online": h.active_cameras if h else 0,
+                "offline": (h.total_cameras - h.active_cameras) if h else 0,
+                "total": h.total_cameras if h else 0,
+                "queue_depth": h.queue_depth if h else 0,
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的模块: {module}")
 
     # ─── 配置查看 ────────────────────────────────────────────
 
@@ -828,11 +1047,14 @@ def create_app(
             raise HTTPException(status_code=400, detail="请输入用户名和密码")
         # 获取客户端 IP
         ip = request.client.host if request.client else ""
-        token = auth_mgr.login(username, password, ip=ip)
-        if not token:
+        result = auth_mgr.login_with_refresh(username, password, ip=ip)
+        if not result:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         user = auth_mgr.get_user(username)
-        return {"token": token, "user": user.to_dict() if user else {"username": username, "role": "unknown"}}
+        return {
+            **result,
+            "user": user.to_dict() if user else {"username": username, "role": "unknown"},
+        }
 
     @app.post("/api/auth/logout",
         tags=["认证"],
@@ -844,6 +1066,59 @@ def create_app(
         if token:
             auth_mgr.logout_by_token(token)
         return {"message": "已退出"}
+
+    @app.post("/api/auth/refresh",
+        tags=["认证"],
+        summary="刷新 Token",
+        description="用 refresh_token 换取新的 access_token 和 refresh_token（rotate）。",
+    )
+    async def auth_refresh(request: Request, body: dict[str, Any] = Body(...)) -> Any:
+        refresh_token = body.get("refresh_token", "")
+        if not refresh_token:
+            raise HTTPException(status_code=400, detail="缺少 refresh_token")
+        ip = request.client.host if request.client else ""
+        result = auth_mgr.refresh_access_token(refresh_token, ip=ip)
+        if not result:
+            raise HTTPException(status_code=401, detail="refresh_token 无效或已过期")
+        return result
+
+    # 注册开关：从配置读取，默认关闭
+    _allow_self_register = config.get("allow_self_register", False)
+
+    @app.post("/api/auth/register",
+        tags=["认证"],
+        summary="用户注册",
+        description="用户自助注册（需开启 allow_self_register），注册后默认 viewer 角色。",
+        responses={
+            200: {"description": "注册成功，返回 token 和用户信息"},
+            403: {"description": "注册功能未开放"},
+            409: {"description": "用户名已存在"},
+        },
+    )
+    async def auth_register(request: Request, body: dict[str, Any] = Body(...)) -> Any:
+        if not _allow_self_register:
+            raise HTTPException(status_code=403, detail="注册功能未开放，请联系管理员")
+        username = body.get("username", "")
+        password = body.get("password", "")
+        email = body.get("email", "")
+        if not username or not password:
+            raise HTTPException(status_code=400, detail="请输入用户名和密码")
+        if len(password) < 6:
+            raise HTTPException(status_code=400, detail="密码至少 6 位")
+        ip = request.client.host if request.client else ""
+        try:
+            auth_mgr.create_user(username, password, "viewer", email=email)
+            result = auth_mgr.login_with_refresh(username, password, ip=ip)
+            if not result:
+                raise HTTPException(status_code=500, detail="注册成功但登录失败")
+            user = auth_mgr.get_user(username)
+            return {
+                **result,
+                "user": user.to_dict() if user else {"username": username, "role": "viewer"},
+            }
+        except ValueError:
+            # 防止用户名枚举：统一返回"用户名已存在或格式不合法"
+            raise HTTPException(status_code=409, detail="用户名已存在或格式不合法")
 
     @app.get("/api/auth/me",
         tags=["认证"],
@@ -886,11 +1161,15 @@ def create_app(
     ) -> Any:
         old_pw = body.get("old_password", "")
         new_pw = body.get("new_password", "")
-        if not old_pw or not new_pw:
-            raise HTTPException(status_code=400, detail="请输入旧密码和新密码")
-        if not auth_mgr.verify_password(old_pw, user.password_hash):
-            raise HTTPException(status_code=401, detail="旧密码错误")
-        auth_mgr.update_user(user.username, password=new_pw)
+        if not new_pw:
+            raise HTTPException(status_code=400, detail="请输入新密码")
+        # 首次改密（must_change_password=True）不需要旧密码
+        if not user.must_change_password:
+            if not old_pw:
+                raise HTTPException(status_code=400, detail="请输入旧密码")
+            if not auth_mgr.verify_password(old_pw, user.password_hash):
+                raise HTTPException(status_code=401, detail="旧密码错误")
+        auth_mgr.update_user(user.username, password=new_pw, must_change_password=False)
         return {"message": "密码已修改"}
 
     @app.get("/api/auth/me/detail",
@@ -963,7 +1242,10 @@ def create_app(
         if not username or not password:
             raise HTTPException(status_code=400, detail="请输入用户名和密码")
         try:
-            return auth_mgr.create_user(username, password, role, email=email)
+            result = auth_mgr.create_user(username, password, role, email=email)
+            if database:
+                database.save_audit_log(user.username, user.role if hasattr(user, "role") else "", "user.create", username)
+            return result
         except ValueError as e:
             raise HTTPException(status_code=409, detail=str(e))
 
@@ -1002,6 +1284,8 @@ def create_app(
     ) -> Any:
         try:
             auth_mgr.delete_user(username)
+            if database:
+                database.save_audit_log(user.username, user.role if hasattr(user, "role") else "", "user.delete", username)
             return {"message": f"用户 {username} 已删除"}
         except ValueError as e:
             detail = str(e)
@@ -1069,20 +1353,73 @@ def create_app(
 
     # ─── WebSocket ────────────────────────────────────────────
 
-    class WSManager:
-        """WebSocket 连接管理器"""
+    import asyncio
 
-        def __init__(self) -> None:
+    class WSManager:
+        """WebSocket 连接管理器（带心跳）"""
+
+        HEARTBEAT_INTERVAL = 30.0
+        MAX_PING_FAILURES = 3
+        PONG_TIMEOUT = 60.0  # 60s 未收到 pong 视为假死
+
+        def __init__(self, db: Any | None = None) -> None:
+            self._db = db
             self._connections: list[WebSocket] = []
+            self._ping_failures: dict[int, int] = {}
+            self._last_pong: dict[int, float] = {}  # id(ws) -> last pong time
+            self._heartbeat_task: asyncio.Task | None = None
+
+        def _ensure_heartbeat(self) -> None:
+            if self._heartbeat_task is None or self._heartbeat_task.done():
+                self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
+        async def _heartbeat_loop(self) -> None:
+            """定时向所有连接发送 ping，检测客户端假死"""
+            try:
+                while self._connections:
+                    await asyncio.sleep(self.HEARTBEAT_INTERVAL)
+                    now = time.time()
+                    dead: list[WebSocket] = []
+                    for ws in list(self._connections):
+                        ws_id = id(ws)
+                        # 检查 pong 超时（假死检测）
+                        last_pong = self._last_pong.get(ws_id, now)
+                        if now - last_pong > self.PONG_TIMEOUT:
+                            dead.append(ws)
+                            continue
+                        # 发送 ping
+                        try:
+                            await ws.send_json({"type": "ping"})
+                        except Exception:
+                            self._ping_failures[ws_id] = self._ping_failures.get(ws_id, 0) + 1
+                            if self._ping_failures[ws_id] >= self.MAX_PING_FAILURES:
+                                dead.append(ws)
+                    for ws in dead:
+                        self.disconnect(ws)
+            finally:
+                self._ping_failures.clear()
 
         async def connect(self, ws: WebSocket) -> None:
+            # 检查控制面板开关
+            if self._db and not self._db.get_control_value("websocket.enabled"):
+                await ws.close(code=4003, reason="WebSocket 已禁用")
+                return
             await ws.accept()
             self._connections.append(ws)
+            self._ping_failures[id(ws)] = 0
+            self._last_pong[id(ws)] = time.time()
+            self._ensure_heartbeat()
             logger.info("ws_connected total=%d", len(self._connections))
+
+        def on_pong(self, ws: WebSocket) -> None:
+            """客户端回 pong 时调用，刷新 last_pong 时间"""
+            self._last_pong[id(ws)] = time.time()
 
         def disconnect(self, ws: WebSocket) -> None:
             if ws in self._connections:
                 self._connections.remove(ws)
+            self._ping_failures.pop(id(ws), None)
+            self._last_pong.pop(id(ws), None)
             logger.debug("ws_disconnected total=%d", len(self._connections))
 
         async def broadcast(self, message: dict[str, Any]) -> None:
@@ -1095,7 +1432,7 @@ def create_app(
             for ws in dead:
                 self.disconnect(ws)
 
-    ws_manager = WSManager()
+    ws_manager = WSManager(db=database)
 
     @app.websocket("/ws",
         name="事件推送 WebSocket",
@@ -1110,8 +1447,10 @@ def create_app(
         await ws_manager.connect(ws)
         try:
             while True:
-                # 心跳：等待客户端消息（ping/pong 或数据）
-                await ws.receive_text()
+                data = await ws.receive_text()
+                # 客户端回 pong 时刷新心跳时间
+                if '"pong"' in data or '"type": "pong"' in data:
+                    ws_manager.on_pong(ws)
         except WebSocketDisconnect:
             ws_manager.disconnect(ws)
         except Exception:

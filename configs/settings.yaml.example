@@ -1,0 +1,139 @@
+# Vision Agent 配置文件示例
+# 复制此文件为 settings.yaml 并填写实际值
+# cp configs/settings.yaml.example configs/settings.yaml
+
+# ─── 系统配置 ─────────────────────────────────────────────
+
+system:
+  name: "Vision Agent"
+  data_dir: "data"
+  log_dir: "logs"
+  log_level: "INFO"
+  log_max_size_mb: 50
+  log_backup_count: 5
+
+# ─── GPU 配置 ─────────────────────────────────────────────
+
+gpu:
+  device_id: 0
+  batch_size: 8
+  batch_timeout_ms: 50
+  fp16: true
+
+# ─── 检测器配置 ───────────────────────────────────────────
+
+detector:
+  model_path: "models/yolo11m.pt"
+  model_name: "yolo11m"
+  confidence: 0.5
+  iou: 0.45
+  input_size: 640
+  classes: null  # null = 检测所有类别
+
+# ─── 追踪器配置 ───────────────────────────────────────────
+
+tracker:
+  type: "botsort"
+  track_thresh: 0.5
+  track_buffer: 30
+
+# ─── 规则引擎配置 ─────────────────────────────────────────
+
+rules:
+  rules_dir: "configs/rules"
+  hot_reload: true
+  hot_reload_interval: 5
+
+# ─── LLM 配置（可选）─────────────────────────────────────
+
+llm:
+  enabled: false
+  provider: "openai_compatible"
+  api_base: "https://api.openai.com/v1"
+  api_key: "${LLM_API_KEY}"  # 环境变量引用
+  model: "gpt-4o-mini"
+  timeout: 30
+  max_retries: 2
+  daily_budget: 10.0
+
+# ─── RAG 配置（预留，第二版）─────────────────────────────
+
+rag:
+  enabled: false
+  vector_store: "chromadb"
+  persist_dir: "data/vector_db"
+  top_k: 5
+
+# ─── 通知配置 ─────────────────────────────────────────────
+
+notification:
+  webhook:
+    enabled: false
+    type: "wechat"  # wechat / dingtalk
+    url: "${WEBHOOK_URL}"  # 环境变量引用
+    max_retries: 2
+    timeout: 10
+  email:
+    enabled: false
+    smtp_host: "smtp.example.com"
+    smtp_port: 465
+    username: "${EMAIL_USER}"
+    password: "${EMAIL_PASS}"  # 环境变量引用
+    use_ssl: true
+    from_name: "Vision Agent"
+    to_addrs:
+      - "admin@example.com"
+    timeout: 30
+
+# ─── 存储配置 ─────────────────────────────────────────────
+
+storage:
+  type: "sqlite"
+  sqlite:
+    path: "data/vision_agent.db"
+  # PostgreSQL（第二版）
+  # postgres:
+  #   host: "localhost"
+  #   port: 5432
+  #   database: "vision_agent"
+  #   username: "postgres"
+  #   password: "${DB_PASS}"
+  #   pool_min: 5
+  #   pool_max: 20
+
+# ─── Redis 配置（可选）───────────────────────────────────
+
+redis:
+  enabled: false
+  host: "localhost"
+  port: 6379
+  password: "${REDIS_PASS}"
+  db: 0
+
+# ─── Web 服务配置 ─────────────────────────────────────────
+
+web:
+  host: "0.0.0.0"
+  port: 8080
+  api_token: "${API_TOKEN}"  # 环境变量引用
+  allow_self_register: false  # 是否允许用户自助注册
+  cors_origins:
+    - "http://localhost:5173"
+    - "http://localhost:3000"
+
+# ─── 录制配置 ─────────────────────────────────────────────
+
+recording:
+  enabled: true
+  buffer_duration: 30
+  default_before: 15
+  default_after: 15
+  output_dir: "data/clips"
+  snapshot_dir: "data/snapshots"
+  video_codec: "libx264"
+  video_crf: 23
+  video_preset: "fast"
+  max_clip_workers: 2
+  retention_days: 7
+  snapshot_retention_days: 30
+  max_disk_gb: 50.0

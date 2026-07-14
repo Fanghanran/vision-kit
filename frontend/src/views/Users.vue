@@ -70,7 +70,7 @@
         </div>
       </div>
 
-      <el-table :data="filteredUsers" v-loading="loading" stripe row-key="username">
+      <el-table :data="paginatedUsers" v-loading="loading" stripe row-key="username">
         <el-table-column prop="username" label="用户名" min-width="120" />
         <el-table-column prop="email" label="邮箱" min-width="160">
           <template #default="{ row }">{{ row.email || '-' }}</template>
@@ -109,6 +109,18 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 分页 -->
+      <el-pagination
+        v-model:current-page="page"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50]"
+        :total="filteredUsers.length"
+        layout="total, sizes, prev, pager, next, jumper"
+        @current-change="onPageChange"
+        @size-change="onPageSizeChange"
+        style="margin-top: 16px; justify-content: flex-end"
+      />
     </el-card>
 
     <!-- 右侧资料卡抽屉 -->
@@ -265,6 +277,23 @@ const filteredUsers = computed(() => {
     return true
   })
 })
+
+// 分页
+const page = ref(1)
+const pageSize = ref(10)
+
+const paginatedUsers = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredUsers.value.slice(start, start + pageSize.value)
+})
+
+function onPageChange() {
+  // el-pagination 自动触发
+}
+
+function onPageSizeChange() {
+  page.value = 1
+}
 
 // 右侧资料卡抽屉
 const drawerVisible = ref(false)

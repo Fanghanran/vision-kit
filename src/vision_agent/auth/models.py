@@ -36,6 +36,7 @@ class User:
     email: str = ""
     status: UserStatus = UserStatus.ACTIVE
     avatar_bg: str = "#1890ff"
+    must_change_password: bool = False
     id: int = 0
     created_at: float = 0.0
     updated_at: float = 0.0
@@ -56,6 +57,7 @@ class User:
             "role": self.role.value,
             "status": self.status.value,
             "avatar_bg": self.avatar_bg,
+            "must_change_password": self.must_change_password,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

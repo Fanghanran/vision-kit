@@ -93,10 +93,12 @@ class ClipRecorder:
         config: RecorderConfig,
         fps: float = 5.0,
         rec_logger: logging.Logger | None = None,
+        database: Any | None = None,
     ):
         self._config = config
         self._fps = fps if fps > 0 else config.fps
         self._log = rec_logger or logger
+        self._database = database
         self._buffers: dict[str, deque[BufferedFrame]] = {}
         self._frame_counters: dict[str, int] = {}
         self._lock = threading.Lock()
@@ -155,6 +157,9 @@ class ClipRecorder:
         """
         if not self._config.enabled:
             return
+        # 检查控制面板开关
+        if self._database and not self._database.get_control_value("recording.enabled"):
+            return
 
         before = (
             before_seconds
@@ -176,6 +181,9 @@ class ClipRecorder:
 
     def save_snapshot(self, camera_id: str, frame: np.ndarray, timestamp: float) -> str:
         """保存单帧截图，返回文件路径"""
+        # 检查控制面板开关
+        if self._database and not self._database.get_control_value("recording.enabled"):
+            return ""
         date_str = datetime.fromtimestamp(timestamp).strftime("%Y/%m/%d")
         dir_path = Path(self._config.snapshot_dir) / date_str
         dir_path.mkdir(parents=True, exist_ok=True)

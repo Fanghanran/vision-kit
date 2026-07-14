@@ -116,15 +116,23 @@ watch(realtimeAlerts, (newVal, oldVal) => {
   }
 })
 
-// 统计卡片
+// 统计卡片（含昨日对比）
 const statCards = computed(() => {
   const h = systemStore.health
+  const todayStats = systemStore.getStats('today')
+  const todayAlerts = todayStats?.total_alerts ?? h?.today_alerts ?? 0
+  const yesterdayAlerts = todayStats?.yesterday_total ?? 0
+  const trend = yesterdayAlerts > 0
+    ? Math.round(((todayAlerts - yesterdayAlerts) / yesterdayAlerts) * 100)
+    : todayAlerts > 0 ? 100 : 0
+
   return [
     {
       label: '今日告警',
-      value: h?.today_alerts ?? 0,
-      displayValue: String(h?.today_alerts ?? '-'),
+      value: todayAlerts,
+      displayValue: String(todayAlerts),
       color: 'var(--va-danger)',
+      trend,
       onClick: () => router.push('/alerts'),
     },
     {

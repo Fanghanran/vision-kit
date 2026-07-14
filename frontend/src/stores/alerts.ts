@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import * as alertsApi from '@/api/alerts'
 import type { Alert, AlertFilters } from '@/api/types'
 import { ElMessage } from 'element-plus'
+import { notifyAlert } from '@/composables/useNotification'
 
 function userMessage(e: any, defaultMsg: string): string {
   const status = e?.response?.status
@@ -68,6 +69,8 @@ export const useAlertsStore = defineStore('alerts', () => {
     if (realtimeAlerts.value.length > 50) {
       realtimeAlerts.value = realtimeAlerts.value.slice(0, 50)
     }
+    // 触发提示音 + 浏览器通知
+    notifyAlert(alert)
   }
 
   function updateAlertStatusById(id: string, newStatus: string) {

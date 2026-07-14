@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import client from '@/api/client'
 import router from '@/router'
+import { broadcastLogout } from '@/composables/useMultiTabSync'
 
 interface UserInfo {
   id: number
@@ -39,6 +40,9 @@ export const useAuthStore = defineStore('auth', () => {
       token.value = data.token
       user.value = data.user
       localStorage.setItem('va-token', data.token)
+      if (data.refresh_token) {
+        localStorage.setItem('va-refresh-token', data.refresh_token)
+      }
       client.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
       return true
     } catch (e: any) {
@@ -70,9 +74,12 @@ export const useAuthStore = defineStore('auth', () => {
     if (token.value) {
       try { await client.post('/api/auth/logout') } catch { /* ignore */ }
     }
+    // 广播登出，通知其他标签页
+    broadcastLogout()
     token.value = ''
     user.value = null
     localStorage.removeItem('va-token')
+    localStorage.removeItem('va-refresh-token')
     delete client.defaults.headers.common['Authorization']
     router.replace({ name: 'Login' })
   }

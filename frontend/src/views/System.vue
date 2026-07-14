@@ -134,6 +134,7 @@
         </el-col>
       </el-row>
     </el-card>
+
   </div>
 </template>
 
@@ -146,6 +147,8 @@ import * as echarts from 'echarts'
 const systemStore = useSystemStore()
 const health = computed(() => systemStore.health)
 const config = computed(() => systemStore.config)
+
+// ─── 延迟图表 ─────────────────────────────────────────────
 
 const latencyChartRef = ref<HTMLElement>()
 let latencyChart: echarts.ECharts | null = null
@@ -220,6 +223,31 @@ function formatUptime(seconds?: number) {
 </script>
 
 <style lang="scss" scoped>
+.control-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--va-border, #eee);
+
+  &:last-child { border-bottom: none; }
+}
+
+.control-info {
+  flex: 1;
+}
+
+.control-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--va-text-primary);
+  margin-bottom: 2px;
+}
+
+.control-desc {
+  font-size: 12px;
+  color: var(--va-text-secondary);
+}
 .card-header {
   display: flex;
   align-items: center;

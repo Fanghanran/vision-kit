@@ -92,6 +92,19 @@
             <el-tab-pane label="通知设置" name="notify">
               <div class="tab-section">
                 <el-form label-width="100px" label-position="left">
+                  <!-- 前端本地通知 -->
+                  <el-divider content-position="left">浏览器通知（本地）</el-divider>
+                  <el-form-item label="提示音">
+                    <el-switch v-model="localNotify.soundEnabled" @change="saveLocalNotify" />
+                  </el-form-item>
+                  <el-form-item label="桌面通知">
+                    <el-switch v-model="localNotify.desktopEnabled" @change="saveLocalNotify" />
+                    <el-button v-if="!notifyPermissionGranted" size="small" type="primary" link style="margin-left:8px" @click="requestNotifyPermission">
+                      授权通知权限
+                    </el-button>
+                  </el-form-item>
+
+                  <!-- 后端通知渠道 -->
                   <el-divider content-position="left">告警推送</el-divider>
                   <el-form-item label="启用">
                     <el-switch v-model="prefs.notify_alert.enabled" @change="savePrefs" />
@@ -218,12 +231,43 @@ import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ArrowLeft, Message, Clock, Promotion } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { ElMessage } from 'element-plus'
+import {
+  getNotificationSettings,
+  setNotificationSettings,
+  requestNotificationPermission,
+} from '@/composables/useNotification'
 
 const authStore = useAuthStore()
 
 // 个人详情
 const detail = ref<any>(null)
 const initial = computed(() => (detail.value?.username || '?')[0])
+
+// 浏览器通知设置（本地）
+const localNotify = reactive({
+  soundEnabled: getNotificationSettings().soundEnabled,
+  desktopEnabled: getNotificationSettings().desktopEnabled,
+})
+const notifyPermissionGranted = ref('Notification' in window && Notification.permission === 'granted')
+
+function saveLocalNotify() {
+  setNotificationSettings({
+    soundEnabled: localNotify.soundEnabled,
+    desktopEnabled: localNotify.desktopEnabled,
+  })
+}
+
+async function requestNotifyPermission() {
+  const granted = await requestNotificationPermission()
+  notifyPermissionGranted.value = granted
+  if (granted) {
+    localNotify.desktopEnabled = true
+    saveLocalNotify()
+    ElMessage.success('通知权限已授权')
+  } else {
+    ElMessage.warning('通知权限被拒绝，请在浏览器设置中手动开启')
+  }
+}
 
 // 头像颜色
 const avatarColors = ['#1890ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96', '#fa541c']

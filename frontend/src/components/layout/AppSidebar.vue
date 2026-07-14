@@ -1,7 +1,7 @@
 <template>
   <aside class="app-sidebar" :class="{ collapsed: isCollapsed }">
     <el-menu
-      :default-active="route.path"
+      :default-active="activeMenu"
       router
       background-color="#001529"
       text-color="#ffffffa6"
@@ -33,9 +33,28 @@
         <el-icon><List /></el-icon>
         <template #title>规则</template>
       </el-menu-item>
-      <el-menu-item index="/system">
+
+      <!-- 系统管理（管理员折叠菜单） -->
+      <el-sub-menu v-if="authStore.isAdmin" index="system-group">
+        <template #title>
+          <el-icon><Monitor /></el-icon>
+          <span>系统管理</span>
+        </template>
+        <el-menu-item index="/system">系统监控</el-menu-item>
+        <el-menu-item index="/system/llm">LLM 模块</el-menu-item>
+        <el-menu-item index="/system/notification">通知模块</el-menu-item>
+        <el-menu-item index="/system/recording">录制模块</el-menu-item>
+        <el-menu-item index="/system/rules">规则引擎</el-menu-item>
+        <el-menu-item index="/system/cameras">摄像头模块</el-menu-item>
+      </el-sub-menu>
+      <el-menu-item v-else index="/system">
         <el-icon><Monitor /></el-icon>
         <template #title>系统</template>
+      </el-menu-item>
+
+      <el-menu-item v-if="authStore.isAdmin" index="/audit">
+        <el-icon><Document /></el-icon>
+        <template #title>审计日志</template>
       </el-menu-item>
     </el-menu>
 
@@ -50,14 +69,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { DataBoard, Bell, VideoCamera, Monitor, Film, UserFilled, Fold, Expand, List } from '@element-plus/icons-vue'
+import { DataBoard, Bell, VideoCamera, Monitor, Film, UserFilled, Fold, Expand, List, Document } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const authStore = useAuthStore()
 const isCollapsed = ref(false)
+
+// 计算当前激活的菜单项（考虑 query 参数）
+const activeMenu = computed(() => {
+  if (route.query.tab === 'audit') return '/system?tab=audit'
+  return route.path
+})
 
 // 响应式自动折叠
 onMounted(() => {
@@ -93,5 +118,46 @@ onMounted(() => {
   cursor: pointer;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   &:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
+}
+</style>
+
+<!-- 全局样式：el-sub-menu 弹出层美化 -->
+<style lang="scss">
+.el-menu--popup {
+  background: #001529 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  padding: 4px 0 !important;
+
+  .el-menu-item {
+    height: 40px !important;
+    line-height: 40px !important;
+    padding: 0 20px !important;
+    min-width: 120px !important;
+    white-space: nowrap !important;
+    font-size: 13px !important;
+
+    &:hover {
+      background: rgba(24, 144, 255, 0.15) !important;
+    }
+
+    &.is-active {
+      color: #1890ff !important;
+      background: rgba(24, 144, 255, 0.1) !important;
+    }
+  }
+}
+
+/* 折叠状态下 sub-menu 图标居中 */
+.el-menu--collapse {
+  .el-sub-menu__title {
+    padding: 0 !important;
+    justify-content: center;
+
+    .el-sub-menu__icon-arrow {
+      display: none;
+    }
+  }
 }
 </style>

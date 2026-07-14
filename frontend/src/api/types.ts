@@ -68,6 +68,7 @@ export interface AlertFilters {
 export interface SystemStats {
   period: string
   total_alerts: number
+  yesterday_total?: number
   alerts_by_type: Record<string, number>
   alerts_by_severity: Record<string, number>
   alerts_by_camera: Record<string, number>
@@ -77,6 +78,6 @@ export interface SystemStats {
 }
 
 export interface WSMessage {
-  type: 'new_alert' | 'alert_status' | 'system_status' | 'camera_status'
+  type: 'new_alert' | 'alert_status' | 'system_status' | 'camera_status' | 'ping' | 'pong'
   [key: string]: any
 }

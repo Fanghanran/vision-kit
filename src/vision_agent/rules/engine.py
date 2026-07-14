@@ -574,15 +574,18 @@ class RuleEngine:
         self,
         config: dict[str, Any] | None = None,
         cache: CacheProtocol | None = None,
+        database: Any | None = None,
     ) -> None:
         """初始化规则引擎
 
         Args:
             config: rules 配置段（可选，有默认值）
             cache: 缓存实例（可选，默认使用内存缓存）
+            database: 数据库实例（可选，用于检查控制项）
         """
         self._config = config or {}
         self._cache = cache or MemoryCache()
+        self._database = database
         self._rules: dict[str, RuleProtocol] = {}
         self._rule_sources: dict[str, str] = {}  # name → 文件路径
         self._rule_configs: dict[str, dict[str, Any]] = {}  # name → per-rule config
@@ -661,6 +664,7 @@ class RuleEngine:
                 self._rules[rule_name] = rule
                 self._rule_sources[rule_name] = source
                 self._rule_configs[rule_name] = {
+                    "enabled": config.get("enabled", True),
                     "window_size": config.get("window_size"),
                     "cooldown": config.get("cooldown"),
                     "time_windows": config.get("time_windows"),
@@ -700,6 +704,11 @@ class RuleEngine:
             rules = list(self._rules.items())
 
         for rule_name, rule in rules:
+            # 检查规则是否启用
+            rule_cfg = self._rule_configs.get(rule_name, {})
+            if rule_cfg.get("enabled") is False:
+                continue
+
             # 检查摄像头适用性
             if rule.camera_ids is not None and camera_id not in rule.camera_ids:
                 continue
@@ -836,6 +845,9 @@ class RuleEngine:
             time.sleep(interval)
             if not self._running:
                 break
+            # 检查控制面板开关
+            if self._database and not self._database.get_control_value("rules.hot_reload"):
+                continue
             try:
                 self._check_rule_changes()
             except Exception as e:
@@ -933,6 +945,7 @@ class RuleEngine:
                 self._rules[rule_name] = rule
                 self._rule_sources[rule_name] = str(yaml_file)
                 self._rule_configs[rule_name] = {
+                    "enabled": config.get("enabled", True),
                     "window_size": config.get("window_size"),
                     "cooldown": config.get("cooldown"),
                     "time_windows": config.get("time_windows"),

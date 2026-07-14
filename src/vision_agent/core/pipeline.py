@@ -764,10 +764,14 @@ class VisionAgent:
         # 追踪器
         self._tracker_manager = TrackerManager(tracker_config)
 
+        # 数据库
+        self._database = database
+
         # 录制器
         self._recorder = ClipRecorder(
             config=recorder_config,
             fps=camera_configs[0].fps if camera_configs and camera_configs[0].fps > 0 else 15.0,
+            database=self._database,
         )
 
         # 规则引擎
@@ -779,14 +783,11 @@ class VisionAgent:
         # 通知器
         self._notifiers = notifiers or []
 
-        # 数据库
-        self._database = database
-
         # 摄像头线程
         self._camera_items: list[CameraConfigItem] = camera_configs
         self._camera_threads: list[CameraThread] = []
         for item in camera_configs:
-            thread = CameraThread(item.camera_config, self._frame_queue)
+            thread = CameraThread(item.camera_config, self._frame_queue, database=self._database)
             self._camera_threads.append(thread)
 
         # 推理线程

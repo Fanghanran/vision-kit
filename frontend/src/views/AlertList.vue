@@ -66,10 +66,12 @@
       <!-- 分页 -->
       <el-pagination
         v-model:current-page="page"
-        :page-size="pageSize"
+        v-model:page-size="pageSize"
+        :page-sizes="[10, 20, 50]"
         :total="total"
-        layout="prev, pager, next, total"
+        layout="total, sizes, prev, pager, next, jumper"
         @current-change="loadData"
+        @size-change="onPageSizeChange"
         style="margin-top: 16px; justify-content: flex-end"
       />
     </el-card>
@@ -78,21 +80,26 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { useAlertsStore } from '@/stores/alerts'
 import { useCamerasStore } from '@/stores/cameras'
 
 const router = useRouter()
+const route = useRoute()
 const alertsStore = useAlertsStore()
 const camerasStore = useCamerasStore()
 
 const alerts = ref<any[]>([])
 const total = ref(0)
 const loading = ref(false)
-const page = ref(1)
-const pageSize = 20
-const filters = reactive({ status: '', severity: '', camera_id: '' })
+const page = ref(Number(route.query.page) || 1)
+const pageSize = ref(10)
+const filters = reactive({
+  status: (route.query.status as string) || '',
+  severity: (route.query.severity as string) || '',
+  camera_id: (route.query.camera_id as string) || '',
+})
 const cameras = computed(() => camerasStore.cameras)
 
 onMounted(() => {
@@ -100,15 +107,30 @@ onMounted(() => {
   camerasStore.fetchCameras()
 })
 
+function syncToUrl() {
+  const query: Record<string, string> = {}
+  if (filters.status) query.status = filters.status
+  if (filters.severity) query.severity = filters.severity
+  if (filters.camera_id) query.camera_id = filters.camera_id
+  if (page.value > 1) query.page = String(page.value)
+  router.replace({ query })
+}
+
 async function loadData() {
   loading.value = true
+  syncToUrl()
   try {
-    await alertsStore.fetchAlerts(filters, page.value, pageSize)
+    await alertsStore.fetchAlerts(filters, page.value, pageSize.value)
     alerts.value = alertsStore.alerts
     total.value = alertsStore.total
   } finally {
     loading.value = false
   }
+}
+
+function onPageSizeChange() {
+  page.value = 1
+  loadData()
 }
 
 function goDetail(row: any) {

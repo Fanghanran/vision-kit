@@ -88,6 +88,69 @@ _CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_events_camera ON events(camera_id)",
 ]
 
+_CREATE_ALERT_ACTIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS alert_actions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id    TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    actor       TEXT NOT NULL,
+    actor_role  TEXT DEFAULT '',
+    details     TEXT DEFAULT '',
+    created_at  REAL NOT NULL,
+    FOREIGN KEY (alert_id) REFERENCES alerts(id) ON DELETE CASCADE
+)
+"""
+
+_CREATE_ALERT_ACTIONS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_alert_actions_alert_id ON alert_actions(alert_id)",
+    "CREATE INDEX IF NOT EXISTS idx_alert_actions_created ON alert_actions(created_at)",
+]
+
+_CREATE_AUDIT_LOGS_TABLE = """
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    username    TEXT NOT NULL,
+    role        TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    resource    TEXT DEFAULT '',
+    details     TEXT DEFAULT '',
+    ip          TEXT DEFAULT '',
+    created_at  REAL NOT NULL
+)
+"""
+
+_CREATE_AUDIT_LOGS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_audit_logs_username ON audit_logs(username)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs(created_at)",
+]
+
+_CREATE_SYSTEM_CONTROLS_TABLE = """
+CREATE TABLE IF NOT EXISTS system_controls (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_by  TEXT DEFAULT '',
+    updated_at  REAL NOT NULL
+)
+"""
+
+# 控制项白名单 + 默认值
+SYSTEM_CONTROLS_DEFAULTS = {
+    "llm.enabled": True,
+    "llm.cache_enabled": True,
+    "notification.webhook.enabled": False,
+    "notification.email.enabled": False,
+    "recording.enabled": True,
+    "rules.hot_reload": True,
+    "cameras.hot_reload": True,
+    "camera.auto_reconnect": True,
+    "websocket.enabled": True,
+    "audit.enabled": True,
+}
+
+# 控制项类型定义（True=布尔型，False=字符串型）
+SYSTEM_CONTROLS_TYPES = {k: True for k in SYSTEM_CONTROLS_DEFAULTS}
+
 
 # ─── 工具函数 ────────────────────────────────────────────────
 
@@ -170,8 +233,9 @@ class DatabaseManager:
                 check_same_thread=False,
                 timeout=10.0,
             )
-            # WAL 模式支持读写并发
+            # WAL 模式支持读写并发 + 启用外键约束（CASCADE 生效）
             self._conn.execute("PRAGMA journal_mode=WAL")
+            self._conn.execute("PRAGMA foreign_keys=ON")
             self._conn.row_factory = sqlite3.Row
         except sqlite3.Error as e:
             raise DatabaseError(
@@ -187,9 +251,14 @@ class DatabaseManager:
             cursor = self._conn.cursor()
             cursor.execute(_CREATE_ALERTS_TABLE)
             cursor.execute(_CREATE_EVENTS_TABLE)
-            for idx_sql in _CREATE_INDEXES:
+            cursor.execute(_CREATE_ALERT_ACTIONS_TABLE)
+            cursor.execute(_CREATE_AUDIT_LOGS_TABLE)
+            cursor.execute(_CREATE_SYSTEM_CONTROLS_TABLE)
+            for idx_sql in _CREATE_INDEXES + _CREATE_ALERT_ACTIONS_INDEXES + _CREATE_AUDIT_LOGS_INDEXES:
                 cursor.execute(idx_sql)
             self._conn.commit()
+            # 初始化默认控制项
+            self._init_system_controls()
             logger.info("database_tables_initialized")
         except sqlite3.Error as e:
             raise DatabaseError(f"建表失败: {e}") from e
@@ -625,6 +694,225 @@ class DatabaseManager:
             metadata=_safe_json_loads(row.get("metadata"), {}),
             timestamp=row.get("created_at", 0.0),
         )
+
+    # ─── 操作历史 ──────────────────────────────────────────────
+
+    def save_alert_action(
+        self,
+        alert_id: str,
+        action_type: str,
+        actor: str,
+        actor_role: str = "",
+        details: str = "",
+    ) -> None:
+        """保存告警操作记录（降级模式：DB 不可用时 log warning 而非 raise）"""
+        if not self._conn:
+            logger.warning("save_alert_action_skipped alert_id=%s reason=no_connection", alert_id)
+            return
+        sql = (
+            "INSERT INTO alert_actions (alert_id, action_type, actor, actor_role, details, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        try:
+            with self._lock:
+                self._conn.execute(
+                    sql, (alert_id, action_type, actor, actor_role, details, time.time())
+                )
+                self._conn.commit()
+        except sqlite3.Error as e:
+            logger.warning("save_alert_action_failed alert_id=%s error=%s", alert_id, e)
+
+    def get_alert_actions(self, alert_id: str) -> list[dict[str, Any]]:
+        """查询告警的操作历史"""
+        if not self._conn:
+            return []
+        sql = (
+            "SELECT id, alert_id, action_type, actor, actor_role, details, created_at "
+            "FROM alert_actions WHERE alert_id = ? ORDER BY created_at ASC"
+        )
+        try:
+            with self._lock:
+                rows = self._conn.execute(sql, (alert_id,)).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error as e:
+            logger.warning("get_alert_actions_failed alert_id=%s error=%s", alert_id, e)
+            return []
+
+    # ─── 审计日志 ──────────────────────────────────────────────
+
+    def save_audit_log(
+        self,
+        username: str,
+        role: str,
+        action: str,
+        resource: str = "",
+        details: str = "",
+        ip: str = "",
+    ) -> None:
+        """保存审计日志（降级模式：DB 不可用时 log warning 而非 raise）"""
+        if not self._conn:
+            logger.warning("save_audit_log_skipped username=%s action=%s reason=no_connection", username, action)
+            return
+        # 检查控制面板开关
+        if not self.get_control_value("audit.enabled"):
+            return
+        sql = (
+            "INSERT INTO audit_logs (username, role, action, resource, details, ip, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        try:
+            with self._lock:
+                self._conn.execute(
+                    sql, (username, role, action, resource, details, ip, time.time())
+                )
+                self._conn.commit()
+        except sqlite3.Error as e:
+            logger.warning("save_audit_log_failed username=%s action=%s error=%s", username, action, e)
+
+    def list_audit_logs(
+        self,
+        filters: dict[str, Any] | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """分页查询审计日志"""
+        if not self._conn:
+            return [], 0
+        filters = filters or {}
+        page = max(1, page)
+        page_size = min(100, max(1, page_size))
+
+        where_clauses: list[str] = []
+        params: list[Any] = []
+        if filters.get("username"):
+            where_clauses.append("username = ?")
+            params.append(filters["username"])
+        if filters.get("action"):
+            where_clauses.append("action = ?")
+            params.append(filters["action"])
+        if filters.get("start_time"):
+            where_clauses.append("created_at >= ?")
+            params.append(filters["start_time"])
+        if filters.get("end_time"):
+            where_clauses.append("created_at <= ?")
+            params.append(filters["end_time"])
+
+        where_str = " AND ".join(where_clauses) if where_clauses else "1=1"
+
+        try:
+            with self._lock:
+                count_sql = f"SELECT COUNT(*) FROM audit_logs WHERE {where_str}"  # noqa: S608
+                total = self._conn.execute(count_sql, params).fetchone()[0]
+
+                offset = (page - 1) * page_size
+                query_sql = (
+                    f"SELECT * FROM audit_logs WHERE {where_str} "  # noqa: S608
+                    f"ORDER BY created_at DESC LIMIT ? OFFSET ?"
+                )
+                rows = self._conn.execute(query_sql, params + [page_size, offset]).fetchall()
+            return [dict(r) for r in rows], total
+        except sqlite3.Error as e:
+            logger.warning("list_audit_logs_failed error=%s", e)
+            return [], 0
+
+    # ─── 系统控制项 ────────────────────────────────────────────
+
+    def _init_system_controls(self) -> None:
+        """初始化默认控制项（仅插入不存在的 key）"""
+        if not self._conn:
+            return
+        now = time.time()
+        for key, default_val in SYSTEM_CONTROLS_DEFAULTS.items():
+            self._conn.execute(
+                "INSERT OR IGNORE INTO system_controls (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?)",
+                (key, str(default_val).lower(), "", now),
+            )
+        self._conn.commit()
+
+    def get_controls(self) -> dict[str, dict[str, Any]]:
+        """获取所有控制项"""
+        if not self._conn:
+            return {}
+        rows = self._conn.execute("SELECT * FROM system_controls").fetchall()
+        result = {}
+        for r in rows:
+            key = r["key"]
+            val_str = r["value"]
+            # 根据类型定义转换值
+            if key in SYSTEM_CONTROLS_TYPES and SYSTEM_CONTROLS_TYPES[key]:
+                val = val_str.lower() in ("true", "1", "yes")
+            else:
+                val = val_str
+            result[key] = {
+                "value": val,
+                "updated_by": r["updated_by"],
+                "updated_at": r["updated_at"],
+            }
+        return result
+
+    def get_control(self, key: str) -> dict[str, Any] | None:
+        """获取单个控制项"""
+        controls = self.get_controls()
+        return controls.get(key)
+
+    def get_control_value(self, key: str) -> Any:
+        """获取控制项的值（带默认值回退）"""
+        controls = self.get_controls()
+        if key in controls:
+            return controls[key]["value"]
+        return SYSTEM_CONTROLS_DEFAULTS.get(key)
+
+    def update_control(self, key: str, value: Any, updated_by: str = "") -> bool:
+        """更新单个控制项"""
+        if key not in SYSTEM_CONTROLS_DEFAULTS:
+            return False
+        if not self._conn:
+            return False
+        # 类型校验
+        if key in SYSTEM_CONTROLS_TYPES and SYSTEM_CONTROLS_TYPES[key]:
+            if not isinstance(value, bool):
+                return False
+            val_str = str(value).lower()
+        else:
+            val_str = str(value)
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO system_controls (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?)",
+                    (key, val_str, updated_by, time.time()),
+                )
+                self._conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.warning("update_control_failed key=%s error=%s", key, e)
+            return False
+
+    def update_controls(self, controls: dict[str, Any], updated_by: str = "") -> int:
+        """批量更新控制项（单一事务），返回成功更新的数量"""
+        if not self._conn:
+            return 0
+        count = 0
+        now = time.time()
+        try:
+            with self._lock:
+                for key, value in controls.items():
+                    if key not in SYSTEM_CONTROLS_DEFAULTS:
+                        continue
+                    if key in SYSTEM_CONTROLS_TYPES and SYSTEM_CONTROLS_TYPES[key]:
+                        if not isinstance(value, bool):
+                            continue
+                        val_str = str(value).lower()
+                    else:
+                        val_str = str(value)
+                    self._conn.execute(
+                        "INSERT OR REPLACE INTO system_controls (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?)",
+                        (key, val_str, updated_by, now),
+                    )
+                    count += 1
+                self._conn.commit()
+        except sqlite3.Error as e:
+            logger.warning("update_controls_failed error=%s", e)
+        return count
 
 
 # ─── 辅助函数 ────────────────────────────────────────────────

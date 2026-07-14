@@ -97,8 +97,9 @@ class WebhookNotifier:
     失败重试（网络抖动），4xx 不重试。
     """
 
-    def __init__(self, config: WebhookConfig) -> None:
+    def __init__(self, config: WebhookConfig, database: Any | None = None) -> None:
         self._config = config
+        self._database = database
         self._client: Any = None
 
     @property
@@ -107,6 +108,9 @@ class WebhookNotifier:
 
     def execute(self, alert: Alert, snapshot_path: str = "") -> bool:
         """发送 Webhook 通知"""
+        # 检查控制面板开关
+        if self._database and not self._database.get_control_value("notification.webhook.enabled"):
+            return False
         if not self._config.url:
             logger.error("webhook_no_url alert=%s", alert.alert_id)
             return False
@@ -293,8 +297,9 @@ class EmailNotifier:
     发送失败不重试。
     """
 
-    def __init__(self, config: EmailConfig) -> None:
+    def __init__(self, config: EmailConfig, database: Any | None = None) -> None:
         self._config = config
+        self._database = database
 
     @property
     def name(self) -> str:
@@ -302,6 +307,9 @@ class EmailNotifier:
 
     def execute(self, alert: Alert, snapshot_path: str = "") -> bool:
         """发送邮件通知"""
+        # 检查控制面板开关
+        if self._database and not self._database.get_control_value("notification.email.enabled"):
+            return False
         to_addrs = self._config.to_addrs or []
         if not to_addrs:
             logger.warning("email_no_recipients alert=%s", alert.alert_id)

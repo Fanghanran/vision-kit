@@ -1,0 +1,34 @@
+# 摄像头配置示例
+# 复制此文件为 cameras.yaml 并填写实际值
+# cp configs/cameras.yaml.example configs/cameras.yaml
+
+cameras:
+  cam_01:
+    camera:
+      id: "cam_01"
+      name: "仓库入口"
+      source_type: "rtsp"
+      rtsp_url: "rtsp://admin:password@192.168.1.100:554/stream1"
+      fps: 5
+      resolution: [640, 640]
+    # detector:
+    #   confidence: 0.6
+    #   classes: ["person"]
+
+  cam_02:
+    camera:
+      id: "cam_02"
+      name: "工厂车间"
+      source_type: "rtsp"
+      rtsp_url: "rtsp://admin:password@192.168.1.101:554/stream1"
+      fps: 5
+      resolution: [640, 640]
+
+  # 测试用视频文件
+  # cam_test:
+  #   camera:
+  #     id: "cam_test"
+  #     name: "测试摄像头"
+  #     source_type: "video"
+  #     video_path: "data/test_video.mp4"
+  #     fps: 5

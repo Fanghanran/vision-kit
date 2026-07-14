@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
     role        TEXT    NOT NULL DEFAULT 'viewer',
     status      INTEGER NOT NULL DEFAULT 0,
     avatar_bg   TEXT    DEFAULT '#1890ff',
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     created_at  REAL    NOT NULL,
     updated_at  REAL    NOT NULL
 )
@@ -83,6 +84,22 @@ _CREATE_ACTIVE_TOKENS_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_active_tokens_expires ON active_tokens(expires_at)",
 ]
 
+_CREATE_REFRESH_TOKENS_TABLE = """
+CREATE TABLE IF NOT EXISTS refresh_tokens (
+    token       TEXT PRIMARY KEY,
+    username    TEXT NOT NULL,
+    ip          TEXT DEFAULT '',
+    expires_at  REAL NOT NULL,
+    created_at  REAL NOT NULL,
+    FOREIGN KEY (username) REFERENCES users(username) ON DELETE CASCADE
+)
+"""
+
+_CREATE_REFRESH_TOKENS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_username ON refresh_tokens(username)",
+    "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at)",
+]
+
 
 def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict[str, Any]:
     """让 SQLite 返回字典而非元组"""
@@ -102,7 +119,8 @@ class AuthManager:
 
     DEFAULT_ADMIN = "admin"
     DEFAULT_PASSWORD = "admin123"
-    TOKEN_EXPIRY = 86400
+    TOKEN_EXPIRY = 86400          # 24 小时
+    REFRESH_TOKEN_EXPIRY = 604800  # 7 天
     MAX_FAILED = 5
     LOCKOUT_DURATION = 300
 
@@ -141,6 +159,9 @@ class AuthManager:
         conn.execute(_CREATE_ACTIVE_TOKENS_TABLE)
         for idx in _CREATE_ACTIVE_TOKENS_INDEXES:
             conn.execute(idx)
+        conn.execute(_CREATE_REFRESH_TOKENS_TABLE)
+        for idx in _CREATE_REFRESH_TOKENS_INDEXES:
+            conn.execute(idx)
         conn.commit()
         logger.info("auth_db_initialized path=%s", self._db_path)
 
@@ -155,19 +176,20 @@ class AuthManager:
         if not row:
             now = time.time()
             conn.execute(
-                """INSERT INTO users (username, password, role, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO users (username, password, role, status, must_change_password, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     self.DEFAULT_ADMIN,
                     self._hash_password(self.DEFAULT_PASSWORD),
                     Role.ADMIN.value,
                     UserStatus.ACTIVE.value,
+                    1,  # 必须修改默认密码
                     now,
                     now,
                 ),
             )
             conn.commit()
-            logger.info("default_admin_created username=%s", self.DEFAULT_ADMIN)
+            logger.info("default_admin_created username=%s must_change_password=true", self.DEFAULT_ADMIN)
 
     def create_user(
         self,
@@ -210,6 +232,7 @@ class AuthManager:
         role: str | None = None,
         status: int | None = None,
         avatar_bg: str | None = None,
+        must_change_password: bool | None = None,
     ) -> dict[str, Any]:
         """更新用户信息，只更新传入的非 None 字段"""
         conn = self._get_conn()
@@ -242,6 +265,9 @@ class AuthManager:
         if avatar_bg is not None:
             updates.append("avatar_bg = ?")
             params.append(avatar_bg)
+        if must_change_password is not None:
+            updates.append("must_change_password = ?")
+            params.append(1 if must_change_password else 0)
 
         if not updates:
             return self._row_to_user(row).to_dict()
@@ -299,6 +325,7 @@ class AuthManager:
             role=Role(_safe_str(row, "role", "viewer")),
             status=UserStatus(row.get("status", 0)),
             avatar_bg=row.get("avatar_bg", "#1890ff"),
+            must_change_password=bool(row.get("must_change_password", 0)),
             created_at=row.get("created_at", 0.0),
             updated_at=row.get("updated_at", 0.0),
         )
@@ -412,6 +439,102 @@ class AuthManager:
         if count > 0:
             logger.debug("expired_tokens_cleaned count=%d", count)
         return count
+
+    # ─── Refresh Token ─────────────────────────────────────────
+
+    def create_refresh_token(self, username: str, ip: str = "") -> str:
+        """生成 refresh token 并持久化"""
+        token = secrets.token_urlsafe(48)  # 更长的 token 更安全
+        expiry = time.time() + self.REFRESH_TOKEN_EXPIRY
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT INTO refresh_tokens (token, username, ip, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+            (token, username, ip, expiry, time.time()),
+        )
+        conn.commit()
+        return token
+
+    def verify_refresh_token(self, token: str) -> User | None:
+        """验证 refresh token，一次性使用（验证后删除）"""
+        now = time.time()
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT username, expires_at FROM refresh_tokens WHERE token = ?", (token,)
+        ).fetchone()
+        if not row:
+            return None
+        # 一次性使用：验证后立即删除
+        conn.execute("DELETE FROM refresh_tokens WHERE token = ?", (token,))
+        conn.commit()
+        if row["expires_at"] <= now:
+            return None
+        user = self.get_user(row["username"])
+        if user and user.is_active:
+            return user
+        return None
+
+    def login_with_refresh(self, username: str, password: str, ip: str = "") -> dict[str, str] | None:
+        """登录并返回 access_token + refresh_token"""
+        access_token = self.login(username, password, ip)
+        if not access_token:
+            return None
+        refresh_token = self.create_refresh_token(username, ip)
+        return {
+            "token": access_token,
+            "refresh_token": refresh_token,
+            "expires_in": self.TOKEN_EXPIRY,
+        }
+
+    def refresh_access_token(self, refresh_token: str, ip: str = "") -> dict[str, str] | None:
+        """用 refresh token 换取新的 access token（原子事务 + rotate）"""
+        now = time.time()
+        conn = self._get_conn()
+        try:
+            conn.execute("BEGIN")
+            # 1. 验证旧 refresh token（在事务内）
+            row = conn.execute(
+                "SELECT username, expires_at FROM refresh_tokens WHERE token = ?", (refresh_token,)
+            ).fetchone()
+            if not row:
+                conn.execute("ROLLBACK")
+                return None
+            if row["expires_at"] <= now:
+                conn.execute("DELETE FROM refresh_tokens WHERE token = ?", (refresh_token,))
+                conn.execute("COMMIT")
+                return None
+            username = row["username"]
+            # 检查用户有效
+            user = self.get_user(username)
+            if not user or not user.is_active:
+                conn.execute("DELETE FROM refresh_tokens WHERE token = ?", (refresh_token,))
+                conn.execute("COMMIT")
+                return None
+            # 2. 删除旧 refresh token
+            conn.execute("DELETE FROM refresh_tokens WHERE token = ?", (refresh_token,))
+            # 3. 签发新 access token
+            new_access = secrets.token_urlsafe(32)
+            access_expiry = now + self.TOKEN_EXPIRY
+            conn.execute(
+                "INSERT INTO active_tokens (token, username, ip, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+                (new_access, username, ip, access_expiry, now),
+            )
+            # 4. 签发新 refresh token（rotate）
+            new_refresh = secrets.token_urlsafe(48)
+            refresh_expiry = now + self.REFRESH_TOKEN_EXPIRY
+            conn.execute(
+                "INSERT INTO refresh_tokens (token, username, ip, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+                (new_refresh, username, ip, refresh_expiry, now),
+            )
+            conn.execute("COMMIT")
+            return {
+                "token": new_access,
+                "refresh_token": new_refresh,
+                "expires_in": self.TOKEN_EXPIRY,
+            }
+        except Exception:
+            conn.execute("ROLLBACK")
+            logger.error("refresh_access_token_failed", exc_info=True)
+            return None
 
     # ─── 权限 ──────────────────────────────────────────────────
 

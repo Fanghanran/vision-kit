@@ -81,6 +81,10 @@
             <el-icon><WarningFilled /></el-icon> {{ error }}
           </p>
         </transition>
+
+        <div class="register-link">
+          没有账户？<router-link to="/register">去注册</router-link>
+        </div>
       </div>
     </div>
   </div>
@@ -109,7 +113,12 @@ async function doLogin() {
   error.value = ''
   try {
     await authStore.login(username.value, password.value)
-    router.replace({ name: 'Dashboard' })
+    // 检查是否需要强制改密
+    if (authStore.user?.must_change_password) {
+      router.replace({ name: 'ChangePassword' })
+    } else {
+      router.replace({ name: 'Dashboard' })
+    }
   } catch (e: any) {
     error.value = e.message || '登录失败'
   } finally {
@@ -305,6 +314,18 @@ async function doLogin() {
   border-radius: 8px;
   border: 1px solid #ffccc7;
   margin-top: 16px;
+}
+
+.register-link {
+  text-align: center;
+  font-size: 14px;
+  color: var(--va-text-secondary);
+  margin-top: 24px;
+  a {
+    color: var(--va-primary);
+    text-decoration: none;
+    &:hover { text-decoration: underline; }
+  }
 }
 
 .login-hint {
