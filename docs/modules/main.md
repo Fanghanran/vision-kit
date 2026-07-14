@@ -2,7 +2,7 @@
 
 ## 1. 模块职责
 
-主入口模块（`__main__.py`）是 Vision Agent 的程序入口，负责以下核心任务：
+主入口模块（`__main__.py`）是 SentinelMind 的程序入口，负责以下核心任务：
 
 1. **命令行参数解析**：接受 --config（配置文件路径）和 --check（仅校验配置）参数。
 2. **配置加载与校验**：加载 YAML 配置文件，校验格式、必填项、运行环境（GPU、端口、文件权限等）。
@@ -39,16 +39,16 @@
 
 ```bash
 # 正常启动
-python -m vision_agent --config configs/settings.yaml
+python -m sentinelmind --config configs/settings.yaml
 
 # 校验配置
-python -m vision_agent --check --config configs/settings.yaml
+python -m sentinelmind --check --config configs/settings.yaml
 
 # 覆盖日志级别
-python -m vision_agent --config configs/settings.yaml --log-level DEBUG
+python -m sentinelmind --config configs/settings.yaml --log-level DEBUG
 
 # 显示版本
-python -m vision_agent --version
+python -m sentinelmind --version
 ```
 
 ## 3. 内部逻辑
@@ -134,7 +134,7 @@ main()
    - 日期格式：`%Y-%m-%d %H:%M:%S`
 
 2. **文件输出**：
-   - 路径：`{system.log_dir}/vision_agent.log`
+   - 路径：`{system.log_dir}/sentinelmind.log`
    - 使用 RotatingFileHandler
    - 单文件最大 50MB（maxBytes=50*1024*1024）
    - 保留 5 个历史文件（backupCount=5）
@@ -356,7 +356,7 @@ main 函数顶层包裹 try-except：
 | GPU 不可用（且配置要求 GPU） | 输出 GPU 状态 | 1 |
 | 组件初始化失败 | 输出组件名称和错误详情 | 1 |
 
-理由：Vision Agent 是长时间运行的监控系统，启动阶段的配置错误如果被忽略，会在运行时产生不可预测的行为（如连接错误的摄像头、使用错误的模型）。fail fast 策略确保系统要么以正确配置运行，要么不运行。
+理由：SentinelMind 是长时间运行的监控系统，启动阶段的配置错误如果被忽略，会在运行时产生不可预测的行为（如连接错误的摄像头、使用错误的模型）。fail fast 策略确保系统要么以正确配置运行，要么不运行。
 
 ### 6.2 运行阶段错误（容错降级）
 

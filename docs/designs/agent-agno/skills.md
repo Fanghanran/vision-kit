@@ -26,9 +26,9 @@
 # agent_agno/skills/patrol.py
 from agno.workflow import Workflow
 from agno import Agent
-from agent_agno.adapters.vision_agent.camera_tools import list_cameras
-from agent_agno.adapters.vision_agent.alert_tools import query_alerts
-from agent_agno.adapters.vision_agent.system_tools import system_health, get_system_stats
+from agent_agno.adapters.sentinelmind.camera_tools import list_cameras
+from agent_agno.adapters.sentinelmind.alert_tools import query_alerts
+from agent_agno.adapters.sentinelmind.system_tools import system_health, get_system_stats
 
 class PatrolWorkflow(Workflow):
     """
@@ -139,7 +139,7 @@ class DailyReportWorkflow(Workflow):
 from agno.workflow import Workflow
 
 class RuleManageWorkflow(Workflow):
-    """规则管理 — 待 Vision Agent 新增 /api/rules 端点后可用"""
+    """规则管理 — 待 SentinelMind 新增 /api/rules 端点后可用"""
 
     description: str = "对话式规则管理：创建/删除/查看检测规则"
 

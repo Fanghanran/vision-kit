@@ -1,4 +1,4 @@
-# Vision Agent 国际化（i18n）设计书
+# SentinelMind 国际化（i18n）设计书
 
 > 状态：待实现  
 > 优先级：P3（项目完善后）  
@@ -333,7 +333,7 @@ function toggle() {
 ### 3.1 文件结构
 
 ```
-src/vision_agent/
+src/sentinelmind/
   i18n/
     __init__.py       # 导出 get_message() 函数
     messages.py       # MESSAGES 字典（zh + en）
@@ -422,7 +422,7 @@ class I18nMiddleware:
 ### 3.5 在端点中使用
 
 ```python
-from vision_agent.i18n import get_message
+from sentinelmind.i18n import get_message
 
 # 在 create_app 中注册中间件
 app.add_middleware(I18nMiddleware)
@@ -441,7 +441,7 @@ async def delete_camera(camera_id: str, request: Request):
 
 ### Phase 1：后端（1h）
 
-1. 创建 `src/vision_agent/i18n/` 模块（`__init__.py` + `messages.py`）
+1. 创建 `src/sentinelmind/i18n/` 模块（`__init__.py` + `messages.py`）
 2. 创建 `I18nMiddleware`
 3. 替换 `app.py` 中所有硬编码 `detail=` 为 `get_message("Exxxx", lang)`
 4. 替换 `auth/manager.py` 中 `ValueError` 为 `get_message("Exxxx")`

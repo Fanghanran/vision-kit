@@ -39,7 +39,7 @@ _SENSITIVE_KEYS = {"password", "api_key", "token", "secret"}
 _DEFAULTS: dict[str, Any] = {
     "version": 1,
     "system": {
-        "name": "Vision Agent",
+        "name": "SentinelMind",
         "data_dir": "data",
         "log_dir": "logs",
         "log_level": "INFO",
@@ -99,7 +99,7 @@ _DEFAULTS: dict[str, Any] = {
     },
     "storage": {
         "type": "sqlite",
-        "sqlite": {"path": "data/vision_agent.db"},
+        "sqlite": {"path": "data/sentinelmind.db"},
         "postgres": {
             "host": "",
             "port": 5432,
@@ -126,7 +126,7 @@ _DEFAULTS: dict[str, Any] = {
 
 # ─── 异常（统一定义在 core/exceptions.py）────────────────────
 
-from vision_agent.core.exceptions import (  # noqa: E402
+from sentinelmind.core.exceptions import (  # noqa: E402
     ConfigLoadError,
     ConfigValidationError,
 )

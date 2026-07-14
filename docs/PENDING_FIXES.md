@@ -13,7 +13,7 @@
 **新建文件**：`frontend/src/composables/useMultiTabSync.ts`
 
 ```typescript
-const channel = new BroadcastChannel('vision-agent-auth')
+const channel = new BroadcastChannel('sentinelmind-auth')
 
 // 发送消息
 channel.postMessage({ type: 'token_expired', page: window.location.pathname })
@@ -62,7 +62,7 @@ channel.onmessage = (event) => {
 
 **方案**：复用已有的数据清理定时任务，在 `ClipRecorder.cleanup_expired` 中添加 thumbs 清理逻辑。
 
-**修改文件**：`src/vision_agent/core/recorder.py`
+**修改文件**：`src/sentinelmind/core/recorder.py`
 
 ```python
 def cleanup_expired(self) -> int:
@@ -105,13 +105,13 @@ def cleanup_expired(self) -> int:
 
 | 文件 | 修改点 |
 |------|--------|
-| `src/vision_agent/llm/analyzer.py` | `analyze()` 开头检查 `llm.enabled` |
-| `src/vision_agent/actions/notifier.py` | `execute()` 开头检查 `notification.webhook.enabled` / `notification.email.enabled` |
-| `src/vision_agent/core/recorder.py` | `save_clip()` / `save_snapshot()` 开头检查 `recording.enabled` |
-| `src/vision_agent/rules/engine.py` | 热重载线程检查 `rules.hot_reload` |
-| `src/vision_agent/core/camera.py` | 重连逻辑检查 `camera.auto_reconnect` |
-| `src/vision_agent/web/api/app.py` | WSManager 检查 `websocket.enabled` |
-| `src/vision_agent/storage/database.py` | `save_audit_log()` 检查 `audit.enabled` |
+| `src/sentinelmind/llm/analyzer.py` | `analyze()` 开头检查 `llm.enabled` |
+| `src/sentinelmind/actions/notifier.py` | `execute()` 开头检查 `notification.webhook.enabled` / `notification.email.enabled` |
+| `src/sentinelmind/core/recorder.py` | `save_clip()` / `save_snapshot()` 开头检查 `recording.enabled` |
+| `src/sentinelmind/rules/engine.py` | 热重载线程检查 `rules.hot_reload` |
+| `src/sentinelmind/core/camera.py` | 重连逻辑检查 `camera.auto_reconnect` |
+| `src/sentinelmind/web/api/app.py` | WSManager 检查 `websocket.enabled` |
+| `src/sentinelmind/storage/database.py` | `save_audit_log()` 检查 `audit.enabled` |
 
 **注入方式**：通过构造函数注入 `database` 实例，各模块调用 `database.get_control_value(key)`。
 

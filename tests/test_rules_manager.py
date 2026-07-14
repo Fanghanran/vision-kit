@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from vision_agent.rules.manager import RuleManager
+from sentinelmind.rules.manager import RuleManager
 
 
 # ─── 辅助函数 ──────────────────────────────────────────────

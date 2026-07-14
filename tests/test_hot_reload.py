@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from vision_agent.core.camera import CameraConfig
-from vision_agent.core.detector import DetectorConfig, YOLODetector
-from vision_agent.core.pipeline import CameraConfigItem, VisionAgent
-from vision_agent.core.recorder import ClipRecorder, RecorderConfig
-from vision_agent.core.tracker import TrackerConfig
+from sentinelmind.core.camera import CameraConfig
+from sentinelmind.core.detector import DetectorConfig, YOLODetector
+from sentinelmind.core.pipeline import CameraConfigItem, VisionAgent
+from sentinelmind.core.recorder import ClipRecorder, RecorderConfig
+from sentinelmind.core.tracker import TrackerConfig
 
 
 # ─── YOLODetector 运行时参数 ─────────────────────────────────

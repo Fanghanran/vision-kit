@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from vision_agent.auth.models import PERMISSIONS, Role, User, UserStatus
+from sentinelmind.auth.models import PERMISSIONS, Role, User, UserStatus
 
 logger = logging.getLogger(__name__)
 

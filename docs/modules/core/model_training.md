@@ -4,7 +4,7 @@
 
 ## 一、训练目标
 
-针对 Vision Agent 项目的三种内置规则，训练一个安全帽 + 人员检测模型：
+针对 SentinelMind 项目的三种内置规则，训练一个安全帽 + 人员检测模型：
 
 | 类别 ID | 类别名称 | 用途 |
 |---|---|---|
@@ -271,7 +271,7 @@ yolo detect val \
   imgsz=640
 ```
 
-## 五、接入 Vision Agent
+## 五、接入 SentinelMind
 
 ### 5.1 模型放置
 
@@ -313,7 +313,7 @@ actions:
 
 ```bash
 # 1. 确认模型加载
-python -m vision_agent --check
+python -m sentinelmind --check
 
 # 2. 用测试视频验证
 python scripts/test_detection.py \
@@ -322,7 +322,7 @@ python scripts/test_detection.py \
   --output data/output_demo.mp4
 
 # 3. 启动系统
-python -m vision_agent --config configs/settings.yaml
+python -m sentinelmind --config configs/settings.yaml
 
 # 4. 打开前端 http://localhost:8080 查看实时效果
 ```

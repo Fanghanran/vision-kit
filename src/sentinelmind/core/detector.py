@@ -20,8 +20,8 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from vision_agent.core.exceptions import ModelLoadError
-from vision_agent.core.types import BoundingBox, Detection
+from sentinelmind.core.exceptions import ModelLoadError
+from sentinelmind.core.types import BoundingBox, Detection
 
 logger = logging.getLogger(__name__)
 

@@ -1,5 +1,5 @@
 """
-统一异常体系 — Vision Agent 所有自定义异常
+统一异常体系 — SentinelMind 所有自定义异常
 
 设计来源：docs/modules/core/exceptions.md
 

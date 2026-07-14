@@ -1,4 +1,4 @@
-# Vision Agent 三 Agent 开发工作流
+# SentinelMind 三 Agent 开发工作流
 
 > 适用于 Claude Code / Claude Agent SDK / 任何支持子 Agent 的智能体平台
 
@@ -15,12 +15,12 @@
 ## 项目上下文
 
 ```
-项目：Vision Agent — 多路视频智能分析框架
-后端：Python 3.10+ FastAPI，src/vision_agent/
+项目：SentinelMind — 多路视频智能分析框架
+后端：Python 3.10+ FastAPI，src/sentinelmind/
 前端：Vue 3 + Element Plus + Pinia，frontend/src/
 测试：pytest，tests/
 配置：configs/ YAML 文件，支持热重载
-规则引擎：src/vision_agent/rules/engine.py（不动）
+规则引擎：src/sentinelmind/rules/engine.py（不动）
 文档：docs/modules/、docs/designs/
 
 代码风格：
@@ -57,7 +57,7 @@
 
 ## 要求
 
-1. 按照项目现有代码风格编写（参考 src/vision_agent/ 下的文件头格式、docstring 风格、日志格式）
+1. 按照项目现有代码风格编写（参考 src/sentinelmind/ 下的文件头格式、docstring 风格、日志格式）
 2. 后端接口如需认证，使用 app.py 中已有的 _require_auth / _require_role 依赖
 3. 前端 API 客户端放 frontend/src/api/，Vue 页面放 frontend/src/views/
 4. 配置模板放 configs/ 对应目录
@@ -83,7 +83,7 @@
 
 1. **正确性** — Bug、边界条件、空值处理、类型错误
 2. **安全性** — 文件路径遍历、注入、认证缺失、权限校验
-3. **一致性** — 与项目现有代码风格是否一致（对比 src/vision_agent/ 下的同类文件）
+3. **一致性** — 与项目现有代码风格是否一致（对比 src/sentinelmind/ 下的同类文件）
 4. **前后端联通** — REST API 路径是否匹配、TypeScript 类型与 Pydantic 模型是否一致
 5. **热重载协同** — 如果涉及 YAML 文件操作，是否与 RuleEngine/ConfigManager 的热重载兼容
 6. **模块边界** — 是否有不该出现的跨模块 import、循环依赖
@@ -143,7 +143,7 @@
 ## 使用示例
 
 ```
-用户：给 Vision Agent 新增规则管理模块，设计文档在 docs/modules/rules/rule_management.md
+用户：给 SentinelMind 新增规则管理模块，设计文档在 docs/modules/rules/rule_management.md
 
 1. CodeWriter → 读取设计文档 → 写 RuleManager + REST API + 前端 Rules.vue
 2. CodeReviewer → 审查 8 个文件 → 输出 17 条问题列表

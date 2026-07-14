@@ -18,8 +18,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 def get_llm():
     """获取 LLM 实例，复用项目已有的 provider"""
     try:
-        from vision_agent.llm.provider import OpenAICompatibleProvider
-        from vision_agent.config.settings import ConfigManager
+        from sentinelmind.llm.provider import OpenAICompatibleProvider
+        from sentinelmind.config.settings import ConfigManager
 
         config = ConfigManager()
         config.load("configs/settings.yaml")
@@ -37,7 +37,7 @@ def get_llm():
         print("[agent] 使用环境变量 OPENAI_API_KEY")
         import os
 
-        from vision_agent.llm.provider import OpenAICompatibleProvider
+        from sentinelmind.llm.provider import OpenAICompatibleProvider
 
         return OpenAICompatibleProvider(
             base_url=os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),

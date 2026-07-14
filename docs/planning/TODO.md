@@ -1,4 +1,4 @@
-# Vision Agent — 后续优化计划
+# SentinelMind — 后续优化计划
 
 > 2026-07-14 更新
 

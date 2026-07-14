@@ -6,8 +6,8 @@ import tempfile
 import pytest
 from starlette.testclient import TestClient
 
-from vision_agent.core.camera import CameraConfig, CameraThread, FrameQueue
-from vision_agent.web.api.app import create_app
+from sentinelmind.core.camera import CameraConfig, CameraThread, FrameQueue
+from sentinelmind.web.api.app import create_app
 
 
 class FakePipeline:
@@ -20,7 +20,7 @@ class FakePipeline:
         return self.cameras.get(camera_id)
 
     def get_camera_states(self) -> dict:
-        from vision_agent.core.types import CameraState, CameraStatus
+        from sentinelmind.core.types import CameraState, CameraStatus
 
         states: dict = {}
         for cid, thread in self.cameras.items():
@@ -57,7 +57,7 @@ def pipeline():
 @pytest.fixture
 def client(pipeline):
     # 创建临时 auth db 并获取 admin token
-    from vision_agent.auth.manager import get_auth_manager
+    from sentinelmind.auth.manager import get_auth_manager
 
     get_auth_manager.__globals__["_auth_manager"] = None
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
@@ -176,7 +176,7 @@ class TestCameraStats:
 
     def test_stats_no_pipeline_returns_zeros(self):
         """无 pipeline 时 stats 端点返回全零值（不依赖 pipeline）"""
-        from vision_agent.auth.manager import get_auth_manager
+        from sentinelmind.auth.manager import get_auth_manager
 
         get_auth_manager.__globals__["_auth_manager"] = None
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:

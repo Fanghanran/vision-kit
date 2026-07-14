@@ -28,7 +28,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
-from vision_agent.core.types import Alert, Event, LLMAnalysis, Severity
+from sentinelmind.core.types import Alert, Event, LLMAnalysis, Severity
 
 logger = logging.getLogger(__name__)
 

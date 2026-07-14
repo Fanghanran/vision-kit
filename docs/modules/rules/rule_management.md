@@ -68,7 +68,7 @@
 ### 3.1 新增文件
 
 ```
-src/vision_agent/
+src/sentinelmind/
 ├── rules/
 │   ├── __init__.py
 │   ├── engine.py          # 现有，不动
@@ -83,7 +83,7 @@ src/vision_agent/
 ### 3.2 规则文件管理器
 
 ```python
-# src/vision_agent/rules/manager.py
+# src/sentinelmind/rules/manager.py
 """
 规则文件管理器 — YAML 文件的读写删操作
 
@@ -296,7 +296,7 @@ def _format_yaml(config: dict) -> str:
 ### 3.3 REST API
 
 ```python
-# src/vision_agent/web/api/rules.py
+# src/sentinelmind/web/api/rules.py
 """
 规则管理 REST API
 
@@ -312,8 +312,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Any
 
-from vision_agent.web.api.app import _require_auth, _require_role
-from vision_agent.rules.manager import RuleManager
+from sentinelmind.web.api.app import _require_auth, _require_role
+from sentinelmind.rules.manager import RuleManager
 
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
@@ -422,7 +422,7 @@ _rule_manager: RuleManager | None = None
 def _get_manager() -> RuleManager:
     global _rule_manager
     if _rule_manager is None:
-        from vision_agent.config.settings import get_config
+        from sentinelmind.config.settings import get_config
         config = get_config()
         rules_dir = config.get("rules", {}).get("dir", "configs/rules")
         _rule_manager = RuleManager(rules_dir)
@@ -434,7 +434,7 @@ def _get_manager() -> RuleManager:
 ```python
 # 在 create_app() 函数中添加：
 
-from vision_agent.web.api.rules import router as rules_router
+from sentinelmind.web.api.rules import router as rules_router
 app.include_router(rules_router)
 ```
 
@@ -681,7 +681,7 @@ configs/rules/
 规则管理 REST API 完成后，Agent 的规则工具可以直接对接：
 
 ```python
-# Agent adapters/vision_agent/rule_tools.py
+# Agent adapters/sentinelmind/rule_tools.py
 # 之前受限于无 API → 现在直接 POST/GET/DELETE /api/rules
 ```
 

@@ -64,9 +64,9 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import SystemMessage
 from agent.core.state import AgentState
-from agent.adapters.vision_agent.camera_tools import list_cameras as list_cameras_tool
-from agent.adapters.vision_agent.alert_tools import query_alerts as query_alerts_tool
-from agent.adapters.vision_agent.system_tools import system_health as system_health_tool, get_system_stats as get_system_stats_tool
+from agent.adapters.sentinelmind.camera_tools import list_cameras as list_cameras_tool
+from agent.adapters.sentinelmind.alert_tools import query_alerts as query_alerts_tool
+from agent.adapters.sentinelmind.system_tools import system_health as system_health_tool, get_system_stats as get_system_stats_tool
 
 PATROL_PROMPT = """你正在执行系统巡检。...（如上）"""
 

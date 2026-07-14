@@ -156,7 +156,7 @@ def build_dual_mode_graph(
 
 ## 系统快照注入
 
-专业模式下，每次激活时自动注入当前系统状态，让 Agent 一开始就知道"什么情况"。快照通过 REST API 获取，不 import Vision Agent 内部模块：
+专业模式下，每次激活时自动注入当前系统状态，让 Agent 一开始就知道"什么情况"。快照通过 REST API 获取，不 import SentinelMind 内部模块：
 
 ```python
 async def capture_system_snapshot(token: str) -> dict:

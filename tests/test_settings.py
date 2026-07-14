@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from vision_agent.config.settings import (
+from sentinelmind.config.settings import (
     ConfigLoadError,
     ConfigManager,
     deep_merge,

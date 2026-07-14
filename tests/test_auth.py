@@ -7,9 +7,9 @@ import time
 import pytest
 from starlette.testclient import TestClient
 
-from vision_agent.auth.manager import AuthManager
-from vision_agent.auth.models import Role
-from vision_agent.web.api.app import create_app
+from sentinelmind.auth.manager import AuthManager
+from sentinelmind.auth.models import Role
+from sentinelmind.web.api.app import create_app
 
 
 # ─── Fixtures ──────────────────────────────────────────────
@@ -59,7 +59,7 @@ def auth_mgr_for_client():
 @pytest.fixture
 def client(auth_mgr_for_client):
     """带 auth 的 TestClient"""
-    import vision_agent.auth.manager as auth_mod
+    import sentinelmind.auth.manager as auth_mod
 
     _orig = auth_mod._auth_manager
     auth_mod._auth_manager = auth_mgr_for_client

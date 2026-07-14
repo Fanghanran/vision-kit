@@ -234,13 +234,13 @@ Agent 收到回调 → 标记已处理
 
 ## Agent 应用生命周期
 
-Agent 独立管理自己的生命周期，不耦合 Vision Agent 的 pipeline 回调：
+Agent 独立管理自己的生命周期，不耦合 SentinelMind 的 pipeline 回调：
 
 ```python
-# agent/app.py（Agent 独立入口，不依赖 Vision Agent 的 assemble_components）
+# agent/app.py（Agent 独立入口，不依赖 SentinelMind 的 assemble_components）
 
 class AgentApp:
-    """Agent 应用 — 独立于 Vision Agent 运行"""
+    """Agent 应用 — 独立于 SentinelMind 运行"""
 
     def __init__(self, config: dict):
         self.config = config
@@ -273,7 +273,7 @@ class AgentApp:
         self.scheduler.stop()
 
     def _create_llm(self, config: dict):
-        """Agent 自己的 LLM 配置，不依赖 Vision Agent 的 llm/provider.py"""
+        """Agent 自己的 LLM 配置，不依赖 SentinelMind 的 llm/provider.py"""
         provider = config.get("llm", {})
         return ChatOpenAI(
             model=provider.get("model", "gpt-4o"),

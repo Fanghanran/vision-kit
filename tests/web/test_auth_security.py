@@ -30,9 +30,9 @@ pytest.importorskip("fastapi")
 
 from fastapi import WebSocketDisconnect  # noqa: E402
 
-from vision_agent.auth.manager import AuthManager  # noqa: E402
-from vision_agent.auth.models import PERMISSIONS, Role, UserStatus  # noqa: E402
-from vision_agent.web.api.app import create_app  # noqa: E402
+from sentinelmind.auth.manager import AuthManager  # noqa: E402
+from sentinelmind.auth.models import PERMISSIONS, Role, UserStatus  # noqa: E402
+from sentinelmind.web.api.app import create_app  # noqa: E402
 
 
 # ─── Fixtures ──────────────────────────────────────────────
@@ -90,7 +90,7 @@ def pipeline():
 @pytest.fixture
 def client(auth_mgr, database, pipeline):
     """带独立 AuthManager 的 TestClient"""
-    import vision_agent.auth.manager as auth_mod
+    import sentinelmind.auth.manager as auth_mod
 
     _orig = auth_mod._auth_manager
     auth_mod._auth_manager = auth_mgr

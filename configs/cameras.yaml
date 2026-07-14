@@ -16,6 +16,28 @@ cameras:
       iou_threshold: 0.45
       classes: null
       input_size: 320
+  new_cam:
+    camera:
+      id: new_cam
+      name: 新摄像头
+      source_type: test
+      rtsp_url: ''
+      video_path: ''
+      fps: 0
+      resolution:
+      - 640
+      - 640
+  dup_cam:
+    camera:
+      id: dup_cam
+      name: d
+      source_type: test
+      rtsp_url: ''
+      video_path: ''
+      fps: 0
+      resolution:
+      - 640
+      - 640
 detector:
   model_path: models/helmet.pt
   confidence: 0.3

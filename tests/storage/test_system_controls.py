@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from vision_agent.storage.database import DatabaseManager, SYSTEM_CONTROLS_DEFAULTS
+from sentinelmind.storage.database import DatabaseManager, SYSTEM_CONTROLS_DEFAULTS
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def db(tmp_path):
 @pytest.fixture
 def client(tmp_path):
     """创建带 admin token 的 TestClient"""
-    from vision_agent.auth.manager import get_auth_manager
+    from sentinelmind.auth.manager import get_auth_manager
 
     get_auth_manager.__globals__["_auth_manager"] = None
     auth_db = tmp_path / "auth.db"
@@ -33,7 +33,7 @@ def client(tmp_path):
     database = DatabaseManager({"type": "sqlite", "sqlite": {"path": str(db_path)}})
     database.connect()
 
-    from vision_agent.web.api.app import create_app
+    from sentinelmind.web.api.app import create_app
 
     app = create_app(database=database, pipeline=None, config={})
     tc = TestClient(app)

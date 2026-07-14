@@ -5,8 +5,8 @@ import uuid
 
 import pytest
 
-from vision_agent.auth.models import Role, User, UserStatus
-from vision_agent.core.types import (
+from sentinelmind.auth.models import Role, User, UserStatus
+from sentinelmind.core.types import (
     Alert,
     AlertStatus,
     BoundingBox,
@@ -99,6 +99,6 @@ class TestUserModel:
 
 class TestSeverityEnum:
     def test_safe_enum(self):
-        from vision_agent.core.types import _safe_enum
+        from sentinelmind.core.types import _safe_enum
         assert _safe_enum(Severity, "critical", Severity.WARNING) == Severity.CRITICAL
         assert _safe_enum(Severity, "bogus", Severity.WARNING) == Severity.WARNING

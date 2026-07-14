@@ -1,4 +1,4 @@
-# Vision Agent 前端设计书
+# SentinelMind 前端设计书
 
 > 技术栈：Vue 3 + TypeScript + Vite + Element Plus + Pinia
 
@@ -6,7 +6,7 @@
 
 ## 1. 定位与目标
 
-Vision Agent 前端是多路视频智能分析系统的监控面板，核心用户是**值班安保人员**和**系统运维人员**。
+SentinelMind 前端是多路视频智能分析系统的监控面板，核心用户是**值班安保人员**和**系统运维人员**。
 
 **核心体验目标**：
 - 告警来了**立刻看到**（WebSocket 实时推送，不轮询）

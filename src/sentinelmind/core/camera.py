@@ -23,8 +23,8 @@ from queue import Empty, Full, Queue
 
 import numpy as np
 
-from vision_agent.core.exceptions import CameraConnectionError, CameraStreamError
-from vision_agent.core.types import CameraState, CameraStatus
+from sentinelmind.core.exceptions import CameraConnectionError, CameraStreamError
+from sentinelmind.core.types import CameraState, CameraStatus
 
 logger = logging.getLogger(__name__)
 

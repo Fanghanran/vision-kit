@@ -30,11 +30,11 @@ from queue import Empty, Full, Queue
 
 import numpy as np
 
-from vision_agent.core.camera import CameraConfig, CameraThread, FrameData, FrameQueue
-from vision_agent.core.detector import DetectorProtocol
-from vision_agent.core.recorder import ClipRecorder, RecorderConfig
-from vision_agent.core.tracker import TrackerConfig, TrackerManager
-from vision_agent.core.types import (
+from sentinelmind.core.camera import CameraConfig, CameraThread, FrameData, FrameQueue
+from sentinelmind.core.detector import DetectorProtocol
+from sentinelmind.core.recorder import ClipRecorder, RecorderConfig
+from sentinelmind.core.tracker import TrackerConfig, TrackerManager
+from sentinelmind.core.types import (
     Alert,
     CameraState,
     CameraStatus,
@@ -643,7 +643,7 @@ class ActionThread:
         if self._prefs_cache is not None and (now - self._prefs_cache_time) < 60:
             return self._prefs_cache
         try:
-            from vision_agent.auth.manager import get_auth_manager
+            from sentinelmind.auth.manager import get_auth_manager
 
             mgr = get_auth_manager()
             prefs = mgr.get_preferences("admin")
@@ -832,7 +832,7 @@ class VisionAgent:
         self._status_callbacks: list[Callable[[SystemStatus], None]] = []
 
         logger.info(
-            "vision_agent_init cameras=%d rule_engine=%s llm=%s notifiers=%d database=%s",
+            "sentinelmind_init cameras=%d rule_engine=%s llm=%s notifiers=%d database=%s",
             len(camera_configs),
             "yes" if rule_engine else "no",
             "yes" if llm_analyzer else "no",
@@ -955,7 +955,7 @@ class VisionAgent:
     def _rebuild_notifiers(self) -> None:
         """从全局配置重建通知器"""
         try:
-            from vision_agent.actions.notifier import (
+            from sentinelmind.actions.notifier import (
                 WebhookConfig, WebhookNotifier,
                 EmailConfig, EmailNotifier,
             )

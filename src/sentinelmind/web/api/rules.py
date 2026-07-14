@@ -105,7 +105,7 @@ _rule_manager: Any = None
 def _get_manager() -> Any:
     global _rule_manager
     if _rule_manager is None:
-        from vision_agent.rules.manager import RuleManager
+        from sentinelmind.rules.manager import RuleManager
 
         _rule_manager = RuleManager()
     return _rule_manager

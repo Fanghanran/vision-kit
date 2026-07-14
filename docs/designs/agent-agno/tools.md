@@ -2,7 +2,7 @@
 
 ## 说明
 
-**适配器层（`adapters/vision_agent/`）的代码 LangChain 版和 Agno 版完全复用。** 工具函数只依赖 `httpx` + Pydantic，不依赖任何 Agent 框架。
+**适配器层（`adapters/sentinelmind/`）的代码 LangChain 版和 Agno 版完全复用。** 工具函数只依赖 `httpx` + Pydantic，不依赖任何 Agent 框架。
 
 两个版本唯一的区别是**工具注册方式**：
 
@@ -29,7 +29,7 @@ async def fn(...) -> str:
 │  │         adapters/ (适配器层)           │    │
 │  │                                       │    │
 │  │  ┌─────────────────┐  ┌────────────┐ │    │
-│  │  │ vision_agent/    │  │ mcp/       │ │    │
+│  │  │ sentinelmind/    │  │ mcp/       │ │    │
 │  │  │ (REST API 调用)  │  │ (MCP 协议) │ │    │
 │  │  └────────┬────────┘  └────────────┘ │    │
 │  └───────────┼──────────────────────────┘    │
@@ -37,7 +37,7 @@ async def fn(...) -> str:
                │ HTTP (Bearer Token 透传)
                ▼
 ┌──────────────────────────────────────────────┐
-│              Vision Agent                     │
+│              SentinelMind                     │
 │  REST API（自身完成 RBAC 校验）                 │
 └──────────────────────────────────────────────┘
 ```
@@ -45,7 +45,7 @@ async def fn(...) -> str:
 ## 一、摄像头工具
 
 ```python
-# agent_agno/adapters/vision_agent/camera_tools.py
+# agent_agno/adapters/sentinelmind/camera_tools.py
 from agno.tools import tool
 from pydantic import BaseModel, Field
 import httpx
@@ -114,7 +114,7 @@ async def add_camera(token: str, id: str, name: str, rtsp_url: str,
 ## 二、告警工具
 
 ```python
-# agent_agno/adapters/vision_agent/alert_tools.py
+# agent_agno/adapters/sentinelmind/alert_tools.py
 from agno.tools import tool
 
 @tool
@@ -187,7 +187,7 @@ async def alert_detail(token: str, alert_id: str) -> str:
 ## 三、系统工具
 
 ```python
-# agent_agno/adapters/vision_agent/system_tools.py
+# agent_agno/adapters/sentinelmind/system_tools.py
 from agno.tools import tool
 
 @tool
@@ -232,7 +232,7 @@ async def get_config(token: str) -> str:
         return f"```yaml\n{yaml.dump(resp.json())}\n```"
 ```
 
-## 四、规则工具（待 Vision Agent 新增 REST 端点）
+## 四、规则工具（待 SentinelMind 新增 REST 端点）
 
 | 端点 | 功能 | 状态 |
 |---|---|---|
@@ -245,9 +245,9 @@ async def get_config(token: str) -> str:
 
 ```python
 # agent_agno/app.py（节选）
-from agent_agno.adapters.vision_agent.camera_tools import list_cameras, toggle_camera, add_camera
-from agent_agno.adapters.vision_agent.alert_tools import query_alerts, acknowledge_alert, alert_detail
-from agent_agno.adapters.vision_agent.system_tools import system_health, get_system_stats, get_config
+from agent_agno.adapters.sentinelmind.camera_tools import list_cameras, toggle_camera, add_camera
+from agent_agno.adapters.sentinelmind.alert_tools import query_alerts, acknowledge_alert, alert_detail
+from agent_agno.adapters.sentinelmind.system_tools import system_health, get_system_stats, get_config
 
 professional_tools = [
     list_cameras,
@@ -259,7 +259,7 @@ professional_tools = [
     system_health,
     get_system_stats,
     get_config,
-    # + rule_tools 待 Vision Agent 新增 /api/rules
+    # + rule_tools 待 SentinelMind 新增 /api/rules
 ]
 
 # 通用模式 — MCP

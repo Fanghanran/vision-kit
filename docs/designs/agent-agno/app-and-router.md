@@ -8,13 +8,13 @@ from agno import Agent
 from agno.models.openai import OpenAIChat
 from agent_agno.memory import create_agent_memory
 from agent_agno import prompts
-from agent_agno.adapters.vision_agent.camera_tools import (
+from agent_agno.adapters.sentinelmind.camera_tools import (
     list_cameras, toggle_camera, add_camera,
 )
-from agent_agno.adapters.vision_agent.alert_tools import (
+from agent_agno.adapters.sentinelmind.alert_tools import (
     query_alerts, acknowledge_alert, alert_detail,
 )
-from agent_agno.adapters.vision_agent.system_tools import (
+from agent_agno.adapters.sentinelmind.system_tools import (
     system_health, get_system_stats, get_config,
 )
 from agent_agno.scheduler import PatrolScheduler
@@ -22,7 +22,7 @@ from agent_agno.skills.patrol import PatrolWorkflow
 from agent_agno.skills.daily_report import DailyReportWorkflow
 
 class AgentApp:
-    """Agent 应用 — 独立于 Vision Agent 运行"""
+    """Agent 应用 — 独立于 SentinelMind 运行"""
 
     def __init__(self, config: dict):
         self.config = config
@@ -248,7 +248,7 @@ async def chat(request: Request, payload: ChatRequest):
 ## 启动流程
 
 ```python
-# 在 Vision Agent 的 __main__.py 中可选择性启动 Agent
+# 在 SentinelMind 的 __main__.py 中可选择性启动 Agent
 
 # 方式1：同进程启动（开发期间）
 agent_app = AgentApp(config=agent_config)

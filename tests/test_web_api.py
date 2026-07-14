@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from starlette.testclient import TestClient
 
-from vision_agent.core.types import Alert, AlertStatus, CameraState, CameraStatus, Event, Severity
-from vision_agent.web.api.app import SanitizeFilter, create_app, sanitize_config, verify_token
+from sentinelmind.core.types import Alert, AlertStatus, CameraState, CameraStatus, Event, Severity
+from sentinelmind.web.api.app import SanitizeFilter, create_app, sanitize_config, verify_token
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -68,7 +68,7 @@ def client():
     pipeline = FakePipeline()
 
     # 创建临时 auth db 并获取 admin token
-    from vision_agent.auth.manager import get_auth_manager
+    from sentinelmind.auth.manager import get_auth_manager
 
     get_auth_manager.__globals__["_auth_manager"] = None
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:

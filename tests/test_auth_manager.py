@@ -2,8 +2,8 @@
 
 import pytest
 
-from vision_agent.auth.manager import AuthManager
-from vision_agent.auth.models import Role, UserStatus
+from sentinelmind.auth.manager import AuthManager
+from sentinelmind.auth.models import Role, UserStatus
 
 
 # ─── Fixtures ──────────────────────────────────────────────

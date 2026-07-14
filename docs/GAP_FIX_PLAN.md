@@ -1,4 +1,4 @@
-# Vision Agent — 监控面板 + 用户系统 差距修复方案
+# SentinelMind — 监控面板 + 用户系统 差距修复方案
 
 > 按优先级分 4 个批次（P0~P3），每批设计完整后实施。共 20 项差距，全部覆盖。
 
@@ -24,7 +24,7 @@
 **方案**：在 FastAPI 的 `create_app` 中注册一个全局认证依赖，对 `/api/*` 路由统一拦截（排除 `/api/auth/login` 等公开端点）。
 
 **修改文件**：
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/web/api/app.py`
 
 **实现步骤**：
 1. 在 `create_app()` 中定义公开路径白名单：`PUBLIC_PATHS = {"/api/auth/login", "/health", "/ws"}`
@@ -49,9 +49,9 @@
 **方案**：新增基于权限字符串的依赖注入器，替换现有的角色检查。
 
 **修改文件**：
-- `src/vision_agent/auth/models.py`（已有 PERMISSIONS，无需改）
-- `src/vision_agent/auth/manager.py`（已有 `has_permission`，无需改）
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/auth/models.py`（已有 PERMISSIONS，无需改）
+- `src/sentinelmind/auth/manager.py`（已有 `has_permission`，无需改）
+- `src/sentinelmind/web/api/app.py`
 
 **实现步骤**：
 1. 在 `app.py` 中新增 `_require_permission(*permissions: str)` 工厂函数：
@@ -95,7 +95,7 @@
 **方案**：WebSocket 握手阶段从 query string 读取 token 并验证。
 
 **修改文件**：
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/web/api/app.py`
 
 **实现步骤**：
 1. 在 `websocket_endpoint` 和 `video_stream` 中，连接建立后首先读取 query 参数：
@@ -119,7 +119,7 @@
 
 **方案**：新增 `active_tokens` 表，每条记录对应一个设备 token。
 
-**修改文件**：`src/vision_agent/auth/manager.py`
+**修改文件**：`src/sentinelmind/auth/manager.py`
 
 **DDL**：
 ```sql
@@ -267,8 +267,8 @@ def _cleanup_expired_tokens(self) -> int:
 
 | 文件 | 变更 |
 |------|------|
-| `src/vision_agent/auth/manager.py` | 新增表 DDL、改 login/verify_token/logout/revoke_sessions/list_active_sessions |
-| `src/vision_agent/web/api/app.py` | `auth_logout` 端点改按 token 删除 |
+| `src/sentinelmind/auth/manager.py` | 新增表 DDL、改 login/verify_token/logout/revoke_sessions/list_active_sessions |
+| `src/sentinelmind/web/api/app.py` | `auth_logout` 端点改按 token 删除 |
 | `tests/web/test_auth_security.py` | 补充多设备登录测试、持久化测试 |
 
 ---
@@ -307,7 +307,7 @@ def _cleanup_expired_tokens(self) -> int:
 **方案**：服务端定时 ping，客户端收到 ping 后 pong，客户端检测到超时未收到 ping 则主动断开重连。
 
 **修改文件**：
-- `src/vision_agent/web/api/app.py`（服务端）
+- `src/sentinelmind/web/api/app.py`（服务端）
 - `frontend/src/composables/useWebSocket.ts`（客户端）
 
 **服务端实现**：
@@ -344,7 +344,7 @@ def _cleanup_expired_tokens(self) -> int:
    - 首次使用时请求 `Notification.requestPermission()`
    - `showBrowserNotification(alert)` 构造通知：
      ```js
-     new Notification('Vision Agent 告警', {
+     new Notification('SentinelMind 告警', {
        body: `[${severityLabel}] ${cameraName} - ${eventTypeLabel}`,
        icon: '/favicon.ico',
        tag: alert_id, // 去重
@@ -364,8 +364,8 @@ def _cleanup_expired_tokens(self) -> int:
 **方案**：新增 `alert_actions` 表，在告警状态变更时自动记录。
 
 **修改文件**：
-- `src/vision_agent/storage/database.py`
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/storage/database.py`
+- `src/sentinelmind/web/api/app.py`
 - `frontend/src/views/AlertDetail.vue`（新增操作历史区块）
 
 **数据库设计**：
@@ -421,8 +421,8 @@ CREATE INDEX idx_alert_actions_created ON alert_actions(created_at);
 **方案**：新增 `audit_logs` 表，记录所有敏感操作（用户管理、配置变更、告警操作、摄像头控制）。
 
 **修改文件**：
-- `src/vision_agent/storage/database.py`
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/storage/database.py`
+- `src/sentinelmind/web/api/app.py`
 - `frontend/src/views/System.vue`（新增审计日志页面/标签页）
 
 **数据库设计**：
@@ -521,7 +521,7 @@ CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
 **方案**：后端 stats API 增加昨日统计，前端 StatCard 展示趋势。
 
 **修改文件**：
-- `src/vision_agent/web/api/app.py`（`get_stats` 端点）
+- `src/sentinelmind/web/api/app.py`（`get_stats` 端点）
 - `frontend/src/views/Dashboard.vue`
 
 **后端实现**：
@@ -547,8 +547,8 @@ CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
 **方案**：后端 stats API 增加 `event_type` 分组，前端图表增加类型筛选器。
 
 **修改文件**：
-- `src/vision_agent/web/api/app.py`（`get_stats` 端点）
-- `src/vision_agent/storage/database.py`（`get_stats` 方法）
+- `src/sentinelmind/web/api/app.py`（`get_stats` 端点）
+- `src/sentinelmind/storage/database.py`（`get_stats` 方法）
 - `frontend/src/views/Dashboard.vue`
 
 **后端实现**：
@@ -576,9 +576,9 @@ CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
 **方案**：新增 `must_change_password` 标记，首次登录后重定向到改密页面。
 
 **修改文件**：
-- `src/vision_agent/auth/manager.py`
-- `src/vision_agent/auth/models.py`
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/auth/manager.py`
+- `src/sentinelmind/auth/models.py`
+- `src/sentinelmind/web/api/app.py`
 - `frontend/src/router/index.ts`
 - `frontend/src/views/Login.vue`
 - `frontend/src/views/Profile.vue`（或新建 ChangePassword.vue）
@@ -660,7 +660,7 @@ CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
 **方案**：后端支持 `?size=thumb` 参数返回缩略图。
 
 **修改文件**：
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/web/api/app.py`
 - `frontend/src/views/AlertDetail.vue`
 
 **后端实现**：
@@ -704,8 +704,8 @@ CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
 **方案**：实现 refresh token 机制。
 
 **修改文件**：
-- `src/vision_agent/auth/manager.py`
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/auth/manager.py`
+- `src/sentinelmind/web/api/app.py`
 - `frontend/src/api/client.ts`
 - `frontend/src/stores/auth.ts`
 
@@ -734,7 +734,7 @@ CREATE INDEX idx_audit_logs_created ON audit_logs(created_at);
 **方案**：新增用户注册端点（可开关）。
 
 **修改文件**：
-- `src/vision_agent/web/api/app.py`
+- `src/sentinelmind/web/api/app.py`
 - `frontend/src/views/Login.vue`
 - `frontend/src/views/Register.vue`（新建）
 
@@ -818,7 +818,7 @@ P3-1 ~ P3-7 (优化)
 
 **目标**：生产环境一键部署，支持开机自启、自动重启、日志管理。
 
-**文件**：`deploy/vision-agent.service`
+**文件**：`deploy/sentinelmind.service`
 
 **配套**：
 - `deploy/install.sh` — 一键安装脚本
@@ -854,7 +854,7 @@ P3-1 ~ P3-7 (优化)
 
 **目标**：Nginx 反向代理 + Let's Encrypt 自动证书。
 
-**文件**：`deploy/nginx/vision-agent.conf` + `scripts/setup-ssl.sh`
+**文件**：`deploy/nginx/sentinelmind.conf` + `scripts/setup-ssl.sh`
 
 ---
 
@@ -862,7 +862,7 @@ P3-1 ~ P3-7 (优化)
 
 **目标**：SQLite → PostgreSQL，支持多用户并发。
 
-**文件**：`scripts/migrate_sqlite_to_postgres.py` + `src/vision_agent/storage/postgres_backend.py`
+**文件**：`scripts/migrate_sqlite_to_postgres.py` + `src/sentinelmind/storage/postgres_backend.py`
 
 ---
 
@@ -870,7 +870,7 @@ P3-1 ~ P3-7 (优化)
 
 **目标**：让 LLM 分析参考历史案例和 SOP。
 
-**文件**：`src/vision_agent/storage/vector_store.py` + `src/vision_agent/llm/rag.py`
+**文件**：`src/sentinelmind/storage/vector_store.py` + `src/sentinelmind/llm/rag.py`
 
 ---
 

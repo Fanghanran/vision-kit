@@ -2,7 +2,7 @@
 
 ## 1. 模块职责
 
-统一定义 Vision Agent 所有自定义异常类，建立分层异常体系。替代当前散落在各模块中的重复异常定义（`ConfigError` 在 pipeline.py 和 settings.py 各定义了一次），为调用方提供清晰的捕获粒度。
+统一定义 SentinelMind 所有自定义异常类，建立分层异常体系。替代当前散落在各模块中的重复异常定义（`ConfigError` 在 pipeline.py 和 settings.py 各定义了一次），为调用方提供清晰的捕获粒度。
 
 异常体系设计原则：
 - **分层继承**：基类 `VisionAgentError` → 模块级异常 → 具体异常

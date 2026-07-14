@@ -238,7 +238,7 @@ import httpx
 
 class AlertHistoryPattern:
     """
-    通过 REST API 查询 Vision Agent 的历史告警，在 Agent 本地做聚合分析。
+    通过 REST API 查询 SentinelMind 的历史告警，在 Agent 本地做聚合分析。
 
     不做额外存储——每次查询实时计算。结果可缓存到 Agent 自己的 memory 中。
 

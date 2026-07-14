@@ -2,7 +2,7 @@
 
 ## 1. 模块职责
 
-配置管理模块负责 Vision Agent 所有配置的加载、校验、访问和热重载。它是系统中依赖最广泛的模块，几乎所有其他模块都通过配置管理获取运行参数。
+配置管理模块负责 SentinelMind 所有配置的加载、校验、访问和热重载。它是系统中依赖最广泛的模块，几乎所有其他模块都通过配置管理获取运行参数。
 
 模块职责包括：
 
@@ -179,7 +179,7 @@
 version: int                    配置格式版本号（当前为 1）
 
 system:
-  name: str                     系统名称（默认 "Vision Agent"）
+  name: str                     系统名称（默认 "SentinelMind"）
   data_dir: str                 数据目录路径（默认 "data"）
   log_dir: str                  日志目录路径（默认 "logs"）
   log_level: str                日志级别（DEBUG/INFO/WARNING/ERROR，默认 INFO）
@@ -241,7 +241,7 @@ notification:
 storage:
   type: str                     存储类型（默认 "sqlite"）
   sqlite:
-    path: str                   SQLite 文件路径（默认 "data/vision_agent.db"）
+    path: str                   SQLite 文件路径（默认 "data/sentinelmind.db"）
   postgres:
     host: str                   数据库主机
     port: int                   端口（默认 5432）

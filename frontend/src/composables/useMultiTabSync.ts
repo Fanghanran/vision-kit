@@ -19,7 +19,7 @@ let isInitialized = false
 
 function getChannel(): BroadcastChannel {
   if (!channel) {
-    channel = new BroadcastChannel('vision-agent-auth')
+    channel = new BroadcastChannel('sentinelmind-auth')
   }
   return channel
 }

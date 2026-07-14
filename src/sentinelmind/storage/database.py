@@ -29,8 +29,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from vision_agent.core.exceptions import DatabaseError
-from vision_agent.core.types import Alert, AlertStatus, Event, LLMAnalysis, Severity
+from sentinelmind.core.exceptions import DatabaseError
+from sentinelmind.core.types import Alert, AlertStatus, Event, LLMAnalysis, Severity
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ class DatabaseManager:
 
         # SQLite 配置
         sqlite_config = self._config.get("sqlite", {})
-        self._db_path = sqlite_config.get("path", "data/vision_agent.db")
+        self._db_path = sqlite_config.get("path", "data/sentinelmind.db")
 
     # ─── 连接管理 ──────────────────────────────────────────────
 

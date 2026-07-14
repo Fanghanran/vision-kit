@@ -11,7 +11,7 @@
             <circle cx="40" cy="38" r="4" stroke="currentColor" stroke-width="2" fill="none"/>
           </svg>
         </div>
-        <h1 class="brand-name">Vision Agent</h1>
+        <h1 class="brand-name">SentinelMind</h1>
         <p class="brand-desc">多路视频智能分析框架</p>
       </div>
     </div>

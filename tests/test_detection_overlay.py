@@ -7,18 +7,18 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from vision_agent.core.camera import CameraConfig, FrameData, FrameQueue
-from vision_agent.core.detector import DetectorConfig
-from vision_agent.core.pipeline import (
+from sentinelmind.core.camera import CameraConfig, FrameData, FrameQueue
+from sentinelmind.core.detector import DetectorConfig
+from sentinelmind.core.pipeline import (
     CameraConfigItem,
     InferenceThread,
     PipelineConfig,
     ResultQueue,
     VisionAgent,
 )
-from vision_agent.core.recorder import RecorderConfig
-from vision_agent.core.tracker import TrackerConfig
-from vision_agent.core.types import BoundingBox, Detection
+from sentinelmind.core.recorder import RecorderConfig
+from sentinelmind.core.tracker import TrackerConfig
+from sentinelmind.core.types import BoundingBox, Detection
 
 
 # ─── _draw_and_encode 单元测试 ─────────────────────────────

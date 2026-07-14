@@ -66,7 +66,7 @@
 | smtp_pass | str | （必填，环境变量） | SMTP 密码，必须用 `${EMAIL_PASS}` |
 | use_ssl | bool | True | 是否使用 SSL |
 | from_addr | str | smtp_user | 发件人地址 |
-| from_name | str | "Vision Agent" | 发件人显示名称 |
+| from_name | str | "SentinelMind" | 发件人显示名称 |
 | to_addrs | list[str] | （必填） | 收件人邮箱列表 |
 | timeout | int | 30 | SMTP 连接超时秒数 |
 
@@ -114,7 +114,7 @@
 
 1. **构造邮件内容**：调用 `_build_email(alert)` 返回三元组 (subject, html_body, text_body)。
 
-2. **邮件主题**：格式为 "[Vision Agent][风险等级] 摄像头名称 - 事件类型"。例如："[Vision Agent][高] 仓库入口 - 区域闯入"。
+2. **邮件主题**：格式为 "[SentinelMind][风险等级] 摄像头名称 - 事件类型"。例如："[SentinelMind][高] 仓库入口 - 区域闯入"。
 
 3. **HTML 邮件模板**：通过 `_render_html_template()` 渲染，内容包含：
    - 页头：系统名称 + 告警时间
@@ -212,7 +212,7 @@
 | notification.email.smtp_user | str | （必填） | SMTP 用户名 |
 | notification.email.smtp_pass | str | （必填，环境变量） | SMTP 密码，用 `${EMAIL_PASS}` |
 | notification.email.use_ssl | bool | True | 是否使用 SSL |
-| notification.email.from_name | str | "Vision Agent" | 发件人显示名称 |
+| notification.email.from_name | str | "SentinelMind" | 发件人显示名称 |
 | notification.email.to_addrs | list[str] | （必填） | 收件人邮箱列表 |
 | notification.email.timeout | int | 30 | SMTP 连接超时秒数 |
 
@@ -285,7 +285,7 @@
 
 决策：告警截图通过 MIMEImage 附件方式内嵌到邮件中，HTML 中用 `<img src="cid:snapshot">` 引用。
 
-理由：外部链接依赖 Web 服务的可达性，如果收件人无法访问 Vision Agent 的 Web 端（如不在同一网段），截图将无法显示。内嵌方式确保截图在任何环境下都能正常显示，且不依赖额外的网络请求。缺点是邮件体积增大，但单张 JPEG 截图通常只有 100-300KB，可接受。
+理由：外部链接依赖 Web 服务的可达性，如果收件人无法访问 SentinelMind 的 Web 端（如不在同一网段），截图将无法显示。内嵌方式确保截图在任何环境下都能正常显示，且不依赖额外的网络请求。缺点是邮件体积增大，但单张 JPEG 截图通常只有 100-300KB，可接受。
 
 ### 7.5 通知结果记录到 Alert.notified_channels
 

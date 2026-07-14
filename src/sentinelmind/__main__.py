@@ -1,5 +1,5 @@
 """
-主入口模块 — Vision Agent 程序入口
+主入口模块 — SentinelMind 程序入口
 
 设计来源：docs/modules/main.md
 
@@ -11,9 +11,9 @@
 - 日志初始化
 
 调用方式：
-    python -m vision_agent --config configs/settings.yaml
-    python -m vision_agent --check
-    python -m vision_agent --version
+    python -m sentinelmind --config configs/settings.yaml
+    python -m sentinelmind --check
+    python -m sentinelmind --version
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from typing import Any
 
 __version__ = "1.0.0"
 
-logger = logging.getLogger("vision_agent")
+logger = logging.getLogger("sentinelmind")
 
 
 # ─── 命令行参数 ──────────────────────────────────────────────
@@ -38,8 +38,8 @@ logger = logging.getLogger("vision_agent")
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="vision_agent",
-        description="Vision Agent — 多路视频智能分析框架",
+        prog="sentinelmind",
+        description="SentinelMind — 多路视频智能分析框架",
     )
     parser.add_argument(
         "--config",
@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--version",
         action="version",
-        version=f"Vision Agent {__version__}",
+        version=f"SentinelMind {__version__}",
     )
     return parser.parse_args()
 
@@ -93,7 +93,7 @@ def setup_logging(config: dict, log_level: str | None = None) -> None:
     # 文件 handler
     try:
         file_handler = RotatingFileHandler(
-            os.path.join(log_dir, "vision_agent.log"),
+            os.path.join(log_dir, "sentinelmind.log"),
             maxBytes=int(max_size),
             backupCount=backup_count,
             encoding="utf-8",
@@ -112,7 +112,7 @@ def setup_logging(config: dict, log_level: str | None = None) -> None:
 
     # 注册日志脱敏 Filter
     try:
-        from vision_agent.web.api.app import SanitizeFilter
+        from sentinelmind.web.api.app import SanitizeFilter
 
         sanitize = SanitizeFilter()
         for handler in root.handlers:
@@ -218,7 +218,7 @@ def assemble_components(config: dict) -> tuple:
         (pipeline, database, web_app) 三元组
     """
     # 步骤 1：Storage
-    from vision_agent.storage.database import DatabaseManager
+    from sentinelmind.storage.database import DatabaseManager
 
     db_config = config.get("storage", {})
     database = DatabaseManager(db_config)
@@ -226,14 +226,14 @@ def assemble_components(config: dict) -> tuple:
     logger.info("component_init component=database")
 
     # 步骤 2：Cache
-    from vision_agent.storage.cache import create_cache
+    from sentinelmind.storage.cache import create_cache
 
     redis_config = config.get("redis", {})
     cache = create_cache(redis_config)
     logger.info("component_init component=cache type=%s", type(cache).__name__)
 
     # 步骤 3：Detector
-    from vision_agent.core.detector import DetectorConfig, YOLODetector
+    from sentinelmind.core.detector import DetectorConfig, YOLODetector
 
     det_config = config.get("detector", {})
     gpu_config = config.get("gpu", {})
@@ -253,7 +253,7 @@ def assemble_components(config: dict) -> tuple:
     logger.info("component_init component=detector model=%s", detector.model_name)
 
     # 步骤 4：Tracker
-    from vision_agent.core.tracker import TrackerConfig
+    from sentinelmind.core.tracker import TrackerConfig
 
     tracker_cfg = config.get("tracker", {})
     tracker_config = TrackerConfig(
@@ -264,7 +264,7 @@ def assemble_components(config: dict) -> tuple:
     logger.info("component_init component=tracker")
 
     # 步骤 5：RuleEngine
-    from vision_agent.rules.engine import RuleEngine
+    from sentinelmind.rules.engine import RuleEngine
 
     rules_config = config.get("rules", {})
     rule_engine = RuleEngine(config=rules_config, cache=cache, database=database)
@@ -276,13 +276,13 @@ def assemble_components(config: dict) -> tuple:
     )
 
     # 步骤 6：LLM
-    from vision_agent.llm.analyzer import LLMAnalyzer, LLMConfig
+    from sentinelmind.llm.analyzer import LLMAnalyzer, LLMConfig
 
     llm_config_dict = config.get("llm", {})
     llm_analyzer = None
     if llm_config_dict.get("enabled", False):
         try:
-            from vision_agent.llm.provider import (
+            from sentinelmind.llm.provider import (
                 LLMProviderConfig,
                 OpenAICompatibleProvider,
             )
@@ -308,7 +308,7 @@ def assemble_components(config: dict) -> tuple:
             logger.warning("llm_init_failed error=%s action=skip", str(e))
 
     # 步骤 7：Notifiers
-    from vision_agent.actions.notifier import (
+    from sentinelmind.actions.notifier import (
         EmailConfig,
         EmailNotifier,
         WebhookConfig,
@@ -340,8 +340,8 @@ def assemble_components(config: dict) -> tuple:
         logger.info("component_init component=email_notifier")
 
     # 步骤 8：Pipeline
-    from vision_agent.core.camera import CameraConfig
-    from vision_agent.core.pipeline import CameraConfigItem, PipelineConfig, VisionAgent
+    from sentinelmind.core.camera import CameraConfig
+    from sentinelmind.core.pipeline import CameraConfigItem, PipelineConfig, VisionAgent
 
     # 摄像头配置（从 ConfigManager 读取，支持 cameras.yaml + 旧目录）
     camera_configs = []
@@ -383,7 +383,7 @@ def assemble_components(config: dict) -> tuple:
         result_queue_size=config.get("pipeline", {}).get("result_queue_size", 100),
     )
 
-    from vision_agent.core.recorder import RecorderConfig
+    from sentinelmind.core.recorder import RecorderConfig
 
     rec_cfg = config.get("recording", {})
     recorder_config = RecorderConfig(
@@ -407,7 +407,7 @@ def assemble_components(config: dict) -> tuple:
     logger.info("component_init component=pipeline cameras=%d", len(camera_configs))
 
     # 步骤 9：Web App
-    from vision_agent.web.api.app import create_app
+    from sentinelmind.web.api.app import create_app
 
     web_config = config.get("web", {})
     web_app = create_app(
@@ -462,7 +462,7 @@ def main() -> int:
 
     # 加载配置
     try:
-        from vision_agent.config.settings import ConfigManager
+        from sentinelmind.config.settings import ConfigManager
 
         config_mgr = ConfigManager(args.config)
         config_mgr.load()
@@ -499,7 +499,7 @@ def main() -> int:
 
     # 组装组件
     try:
-        from vision_agent.config.settings import _get_nested
+        from sentinelmind.config.settings import _get_nested
 
         pipeline, database, web_app, web_config = assemble_components(config)
 
@@ -507,7 +507,7 @@ def main() -> int:
         pipeline._set_config_reference(config_mgr._global_config)
 
         def _build_cam_cfg(cam_data: dict, cam_id: str):
-            from vision_agent.core.camera import CameraConfig
+            from sentinelmind.core.camera import CameraConfig
             res = cam_data.get("resolution", [640, 640])
             return CameraConfig(
                 camera_id=cam_data.get("id", cam_id),

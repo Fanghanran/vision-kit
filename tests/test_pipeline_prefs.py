@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from vision_agent.core.pipeline import ActionThread, ResultQueue
+from sentinelmind.core.pipeline import ActionThread, ResultQueue
 
 
 # ─── Helpers ────────────────────────────────────────────────
@@ -56,7 +56,7 @@ class TestShouldNotify:
         at._prefs_cache = None
         at._prefs_cache_time = 0.0
 
-        with patch("vision_agent.auth.manager.get_auth_manager", return_value=mock_mgr):
+        with patch("sentinelmind.auth.manager.get_auth_manager", return_value=mock_mgr):
             fallback = at._get_admin_preferences()
 
         # 验证回退默认值结构
@@ -90,7 +90,7 @@ class TestPrefsCache:
         at._prefs_cache = None
         at._prefs_cache_time = 0.0
 
-        with patch("vision_agent.auth.manager.get_auth_manager", return_value=mock_mgr):
+        with patch("sentinelmind.auth.manager.get_auth_manager", return_value=mock_mgr):
             prefs1 = at._get_admin_preferences()
             prefs2 = at._get_admin_preferences()
 
@@ -110,7 +110,7 @@ class TestPrefsCache:
         at._prefs_cache = None
         at._prefs_cache_time = 0.0
 
-        with patch("vision_agent.auth.manager.get_auth_manager", return_value=mock_mgr):
+        with patch("sentinelmind.auth.manager.get_auth_manager", return_value=mock_mgr):
             # 第一次调用，填充缓存
             at._get_admin_preferences()
             assert mock_mgr.get_preferences.call_count == 1

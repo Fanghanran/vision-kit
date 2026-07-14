@@ -98,7 +98,7 @@ export function showBrowserNotification(alert: Alert) {
     counting: '人数统计',
   }
 
-  const title = `Vision Agent ${severityMap[alert.severity] || '告警'}`
+  const title = `SentinelMind ${severityMap[alert.severity] || '告警'}`
   const body = `[${eventTypeMap[alert.event_type] || alert.event_type}] ${alert.camera_name}`
 
   try {

@@ -1,7 +1,7 @@
 # 存储配置
 storage:
   type: sqlite
-  path: data/vision_agent.db
+  path: data/sentinelmind.db
 
 redis:
   enabled: false

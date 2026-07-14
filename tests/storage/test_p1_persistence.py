@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vision_agent.core.types import Event, Severity
-from vision_agent.storage.database import DatabaseManager
+from sentinelmind.core.types import Event, Severity
+from sentinelmind.storage.database import DatabaseManager
 
 
 # ─── Fixtures ─────────────────────────────────────────────────
@@ -200,8 +200,8 @@ def api_client(tmp_path: Path):
     """带真实 DatabaseManager 的 TestClient，返回 (client, db, token)"""
     from starlette.testclient import TestClient
 
-    from vision_agent.auth.manager import get_auth_manager
-    from vision_agent.web.api.app import create_app
+    from sentinelmind.auth.manager import get_auth_manager
+    from sentinelmind.web.api.app import create_app
 
     # 初始化 auth manager
     get_auth_manager.__globals__["_auth_manager"] = None
@@ -283,7 +283,7 @@ class TestAuditLogsAPI:
         """非管理员访问 /api/audit/logs 返回 403"""
         tc, db, admin_token = api_client
 
-        from vision_agent.auth.manager import get_auth_manager
+        from sentinelmind.auth.manager import get_auth_manager
 
         auth_mgr = get_auth_manager()
         auth_mgr.create_user("viewer1", "pass123", "viewer")
@@ -313,7 +313,7 @@ class TestWSManagerHeartbeat:
 
     def _get_ws_manager(self):
         """通过 create_app 获取 WSManager 实例"""
-        from vision_agent.web.api.app import create_app
+        from sentinelmind.web.api.app import create_app
 
         app = create_app(config={})
         return app.state.ws_manager

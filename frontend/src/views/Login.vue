@@ -15,7 +15,7 @@
             <path d="M52 52 L64 60 L76 52" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </div>
-        <h1 class="brand-name">Vision Agent</h1>
+        <h1 class="brand-name">SentinelMind</h1>
         <p class="brand-desc">多路视频智能分析框架</p>
         <div class="brand-features">
           <div class="feature-item">
@@ -29,7 +29,7 @@
           </div>
         </div>
       </div>
-      <div class="brand-footer">© 2026 Vision Agent</div>
+      <div class="brand-footer">© 2026 SentinelMind</div>
     </div>
 
     <!-- 右侧登录区 -->

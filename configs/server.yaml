@@ -4,5 +4,6 @@ web:
   host: 0.0.0.0
   port: 8080
   api_token: ""
+  allow_self_register: true   # 开启用户自助注册
   cors_origins:
     - "http://localhost:3000"

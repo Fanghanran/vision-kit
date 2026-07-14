@@ -30,7 +30,7 @@ from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 
-from vision_agent.core.types import Event, Severity, Track
+from sentinelmind.core.types import Event, Severity, Track
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ class RuleProtocol(Protocol):
 
 # ─── 缓存（统一从 storage/cache.py 导入）──────────────────────
 
-from vision_agent.storage.cache import CacheProtocol, MemoryCache  # noqa: E402
+from sentinelmind.storage.cache import CacheProtocol, MemoryCache  # noqa: E402
 
 # ─── 内存缓存 ────────────────────────────────────────────────
 

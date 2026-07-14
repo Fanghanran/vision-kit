@@ -2,7 +2,7 @@
 
 ## 1. 模块职责
 
-数据库存储模块负责 Vision Agent 的告警数据持久化，包括告警记录的增删改查、事件数据的关联存储，以及告警统计查询。
+数据库存储模块负责 SentinelMind 的告警数据持久化，包括告警记录的增删改查、事件数据的关联存储，以及告警统计查询。
 
 模块职责包括：
 
@@ -212,10 +212,10 @@ events 表和 alerts 表通过 event_id 字段关联。一个 Event 可能对应
 | 配置项 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
 | type | str | "sqlite" | 数据库类型，"sqlite" 或 "postgres" |
-| sqlite.path | str | "data/vision_agent.db" | SQLite 文件路径 |
+| sqlite.path | str | "data/sentinelmind.db" | SQLite 文件路径 |
 | postgres.host | str | "localhost" | PostgreSQL 主机地址 |
 | postgres.port | int | 5432 | PostgreSQL 端口 |
-| postgres.database | str | "vision_agent" | 数据库名 |
+| postgres.database | str | "sentinelmind" | 数据库名 |
 | postgres.username | str | "postgres" | 用户名 |
 | postgres.password | str | ${DB_PASS} | 密码（环境变量） |
 | postgres.pool_min | int | 5 | 连接池最小连接数 |

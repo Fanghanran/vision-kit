@@ -2,7 +2,7 @@
 
 ## 1. 模块职责
 
-Web API 模块为 Vision Agent 提供对外的 HTTP REST API 和 WebSocket 实时推送能力。基于 FastAPI 框架构建，通过 uvicorn ASGI 服务器运行。它承担三个核心职责：
+Web API 模块为 SentinelMind 提供对外的 HTTP REST API 和 WebSocket 实时推送能力。基于 FastAPI 框架构建，通过 uvicorn ASGI 服务器运行。它承担三个核心职责：
 
 1. **数据查询接口**：提供摄像头状态、告警列表/详情、系统统计、配置查看等 REST 端点，供前端和第三方系统调用。
 2. **告警管理接口**：提供告警状态更新（确认/标记误报/解决）端点，支持值班人员对告警进行处置操作。

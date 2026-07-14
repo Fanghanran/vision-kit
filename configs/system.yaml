@@ -1,6 +1,6 @@
 # 系统基础配置
 system:
-  name: "Vision Agent"
+  name: "SentinelMind"
   log_level: INFO
   log_dir: logs
   log_max_size_mb: 50

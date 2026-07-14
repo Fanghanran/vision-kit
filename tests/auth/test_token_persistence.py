@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from vision_agent.auth.manager import get_auth_manager
+from sentinelmind.auth.manager import get_auth_manager
 
 
 # ─── Fixtures ──────────────────────────────────────────────

@@ -2,7 +2,7 @@
   <header class="app-header">
     <div class="header-left">
       <el-icon :size="24"><VideoCamera /></el-icon>
-      <h1 class="header-title">Vision Agent</h1>
+      <h1 class="header-title">SentinelMind</h1>
       <el-tag
         :type="statusTagType"
         size="small"

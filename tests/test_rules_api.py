@@ -5,8 +5,8 @@ from unittest.mock import patch
 import pytest
 from starlette.testclient import TestClient
 
-from vision_agent.rules.manager import RuleManager
-from vision_agent.web.api.rules import create_router
+from sentinelmind.rules.manager import RuleManager
+from sentinelmind.web.api.rules import create_router
 
 
 # ─── 辅助函数 ──────────────────────────────────────────────
@@ -46,7 +46,7 @@ def client(tmp_path):
     mgr = RuleManager(rules_file=str(rules_dir / "rules.yaml"))
 
     # Patch 模块级单例 _rule_manager，使 create_router 使用 temp dir 的 manager
-    import vision_agent.web.api.rules as rules_mod
+    import sentinelmind.web.api.rules as rules_mod
 
     with patch.object(rules_mod, "_rule_manager", mgr):
         router = create_router(auth_dependency=None)

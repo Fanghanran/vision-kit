@@ -470,7 +470,7 @@ reload_rules()
 
 | 字段名 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `system.name` | `str` | "Vision Agent" | 系统名称 |
+| `system.name` | `str` | "SentinelMind" | 系统名称 |
 | `system.log_level` | `str` | "INFO" | 日志级别 |
 | `system.log_dir` | `str` | "logs" | 日志目录 |
 | `system.data_dir` | `str` | "data" | 数据目录 |

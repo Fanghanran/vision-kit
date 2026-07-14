@@ -19,7 +19,7 @@ from typing import Protocol, runtime_checkable
 
 import numpy as np
 
-from vision_agent.core.types import BoundingBox, Detection, Track
+from sentinelmind.core.types import BoundingBox, Detection, Track
 
 logger = logging.getLogger(__name__)
 

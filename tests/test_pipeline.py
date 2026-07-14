@@ -6,15 +6,15 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from vision_agent.core.camera import CameraConfig, CameraThread, FrameQueue
-from vision_agent.core.pipeline import (
+from sentinelmind.core.camera import CameraConfig, CameraThread, FrameQueue
+from sentinelmind.core.pipeline import (
     ActionThread,
     InferenceThread,
     PipelineConfig,
     ResultQueue,
     VisionAgent,
 )
-from vision_agent.core.types import Detection
+from sentinelmind.core.types import Detection
 
 
 # ─── ResultQueue ──────────────────────────────────────────
@@ -41,7 +41,7 @@ class TestResultQueue:
 class TestInferenceThread:
     @pytest.fixture
     def detector(self):
-        from vision_agent.core.types import BoundingBox
+        from sentinelmind.core.types import BoundingBox
         det = MagicMock()
         det.detect.return_value = [Detection(frame_id=1, class_id=0, class_name="person",
                                               confidence=0.9, bbox=BoundingBox(1, 2, 3, 4))]
@@ -72,7 +72,7 @@ class TestInferenceThread:
         assert not t.is_alive()
 
     def test_processes_frames(self, thread):
-        from vision_agent.core.camera import FrameData
+        from sentinelmind.core.camera import FrameData
 
         t, fq = thread
         t.start()
@@ -105,10 +105,10 @@ class TestActionThread:
 class TestVisionAgent:
     @pytest.fixture
     def agent(self):
-        from vision_agent.core.camera import CameraConfig
-        from vision_agent.core.pipeline import CameraConfigItem
-        from vision_agent.core.recorder import RecorderConfig
-        from vision_agent.core.tracker import TrackerConfig
+        from sentinelmind.core.camera import CameraConfig
+        from sentinelmind.core.pipeline import CameraConfigItem
+        from sentinelmind.core.recorder import RecorderConfig
+        from sentinelmind.core.tracker import TrackerConfig
 
         detector = MagicMock()
         detector.detect.return_value = []
@@ -155,7 +155,7 @@ class TestVisionAgent:
         agent.stop()
 
     def test_add_remove_camera(self, agent):
-        from vision_agent.core.camera import CameraConfig
+        from sentinelmind.core.camera import CameraConfig
 
         agent.start()
         agent.add_camera(CameraConfig(camera_id="new_cam", camera_name="新", source_type="test", fps=5))

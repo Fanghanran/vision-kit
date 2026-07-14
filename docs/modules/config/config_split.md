@@ -45,9 +45,9 @@ configs/
 ```yaml
 version: 1
 system:
-  name: "Vision Agent"
+  name: "SentinelMind"
   log_level: INFO
-  log_file: logs/vision_agent.log
+  log_file: logs/sentinelmind.log
   log_max_size: 50MB
   log_backup_count: 5
   data_dir: data
@@ -125,7 +125,7 @@ web:
 ```yaml
 storage:
   type: sqlite
-  path: data/vision_agent.db
+  path: data/sentinelmind.db
 
 redis:
   enabled: false
@@ -146,7 +146,7 @@ recording:
 
 ### settings.yaml（精简后）
 ```yaml
-# Vision Agent 配置入口
+# SentinelMind 配置入口
 # 各模块配置从以下文件加载：
 #   system.yaml / detector.yaml / gpu.yaml / tracker.yaml
 #   llm.yaml / notification.yaml / server.yaml / storage.yaml / recording.yaml
@@ -196,5 +196,5 @@ def load(self, config_path: str):
 | configs/recording.yaml | 新增 |
 | configs/settings.yaml | 精简为入口 |
 | configs/settings.yaml.example | 同步精简 |
-| src/vision_agent/config/settings.py | ConfigManager.load() 支持拆分文件合并 |
+| src/sentinelmind/config/settings.py | ConfigManager.load() 支持拆分文件合并 |
 | docs/modules/config/config.md | 更新文档 |

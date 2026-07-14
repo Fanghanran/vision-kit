@@ -1,5 +1,5 @@
 """
-统一数据模型 — Vision Agent 所有模块共享的数据结构
+统一数据模型 — SentinelMind 所有模块共享的数据结构
 
 设计决策（来自 architecture.md 6.4 节）：
 - 所有 ID 用 UUID，不用自增整数（分布式友好，合并不冲突）

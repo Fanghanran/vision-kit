@@ -70,7 +70,7 @@ def _get_admin_preferences(self) -> dict:
     if self._prefs_cache and (now - self._prefs_cache_time) < 60:
         return self._prefs_cache
     try:
-        from vision_agent.auth.manager import get_auth_manager
+        from sentinelmind.auth.manager import get_auth_manager
         mgr = get_auth_manager()
         prefs = mgr.get_preferences("admin")
         self._prefs_cache = prefs

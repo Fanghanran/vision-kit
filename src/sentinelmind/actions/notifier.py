@@ -29,7 +29,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any
 
-from vision_agent.core.types import Alert
+from sentinelmind.core.types import Alert
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +60,7 @@ class EmailConfig:
     smtp_pass: str = ""
     use_ssl: bool = True
     from_addr: str = ""
-    from_name: str = "Vision Agent"
+    from_name: str = "SentinelMind"
     to_addrs: list[str] | None = None
     timeout: int = 30
 
@@ -344,7 +344,7 @@ class EmailNotifier:
             else "未知"
         )
 
-        subject = f"[Vision Agent][{risk_level}] {camera_name} - {event_cn}"
+        subject = f"[SentinelMind][{risk_level}] {camera_name} - {event_cn}"
 
         # HTML 邮件（外部数据转义防注入）
         esc = html.escape
@@ -374,7 +374,7 @@ class EmailNotifier:
         html_parts.append('<p><img src="cid:snapshot" style="max-width:640px" /></p>')
         html_parts.extend(
             [
-                f"<hr><small>告警ID：{alert.alert_id} | Vision Agent</small>",
+                f"<hr><small>告警ID：{alert.alert_id} | SentinelMind</small>",
                 "</body></html>",
             ]
         )
@@ -397,7 +397,7 @@ class EmailNotifier:
                     f"  建议：{llm.suggestion}",
                 ]
             )
-        text_lines.extend(["", f"告警ID：{alert.alert_id} | Vision Agent"])
+        text_lines.extend(["", f"告警ID：{alert.alert_id} | SentinelMind"])
 
         return subject, "".join(html_parts), "\n".join(text_lines)
 

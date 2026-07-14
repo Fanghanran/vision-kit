@@ -55,7 +55,7 @@ from agno import Agent
 agent = Agent(
     model=OpenAIChat(id="gpt-4o"),
     tools=[...],
-    system_prompt="你是 Vision Agent 运维专家。",
+    system_prompt="你是 SentinelMind 运维专家。",
 
     # ─── 记忆：一行 ───
     memory=create_agent_memory(),
@@ -90,7 +90,7 @@ def create_knowledge_base() -> KnowledgeBase:
     """
     return KnowledgeBase(
         vector_db=ChromaDb(
-            collection="vision_agent_knowledge",
+            collection="sentinelmind_knowledge",
             path="data/vector_db",
         ),
         # 可选：预加载文档目录

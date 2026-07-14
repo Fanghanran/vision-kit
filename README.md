@@ -1,8 +1,8 @@
-# Vision Agent
+# SentinelMind
 
 多路视频智能分析框架 — 让任何视频流拥有**看懂、想明白、做决定**的能力。
 
-Vision Agent 不是又一个目标检测工具。它把 YOLO 的感知能力、规则引擎的判断能力、LLM 的理解能力串联起来，实现从"检测到异常"到"告诉人该怎么办"的完整链路。
+SentinelMind 不是又一个目标检测工具。它把 YOLO 的感知能力、规则引擎的判断能力、LLM 的理解能力串联起来，实现从"检测到异常"到"告诉人该怎么办"的完整链路。
 
 ```
 摄像头RTSP流 → YOLO检测 → 多目标追踪 → 规则引擎 → LLM分析 → 通知
@@ -85,7 +85,7 @@ export WEBHOOK_URL="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
 
 ```bash
 # 启动后端
-python -m vision_agent --config configs/settings.yaml
+python -m sentinelmind --config configs/settings.yaml
 
 # 新终端：启动前端
 cd frontend
@@ -176,8 +176,8 @@ actions:
 
 ```python
 # plugins/my_rule.py
-from vision_agent.rules.engine import RuleProtocol
-from vision_agent.core.types import Track, Event
+from sentinelmind.rules.engine import RuleProtocol
+from sentinelmind.core.types import Track, Event
 
 class ForkliftSpeedRule:
     """叉车超速检测"""
@@ -333,7 +333,7 @@ notification:
 
 ```bash
 pip install -r requirements.txt
-python -m vision_agent --config configs/settings.yaml
+python -m sentinelmind --config configs/settings.yaml
 ```
 
 零外部依赖：SQLite + 内存缓存，不需要 Redis、PostgreSQL、Docker。
@@ -341,9 +341,9 @@ python -m vision_agent --config configs/settings.yaml
 ### 生产环境
 
 ```bash
-sudo cp deploy/vision-agent.service /etc/systemd/system/
-sudo systemctl enable vision-agent
-sudo systemctl start vision-agent
+sudo cp deploy/sentinelmind.service /etc/systemd/system/
+sudo systemctl enable sentinelmind
+sudo systemctl start sentinelmind
 ```
 
 ### 硬件需求
@@ -359,7 +359,7 @@ sudo systemctl start vision-agent
 ## 项目结构
 
 ```
-vision_agent/
+sentinelmind/
 ├── .gitignore
 ├── README.md                          ← 你正在看的
 ├── requirements.txt
@@ -373,7 +373,7 @@ vision_agent/
 │   └── architecture.md                ← 完整架构设计文档（1194行）
 │
 ├── src/
-│   └── vision_agent/                  ← 主代码包（import: from vision_agent.core import ...）
+│   └── sentinelmind/                  ← 主代码包（import: from sentinelmind.core import ...）
 │       ├── core/                      ← 核心管线
 │       │   ├── types.py               ← 统一数据模型
 │       │   ├── pipeline.py            ← 主处理管线
@@ -417,7 +417,7 @@ vision_agent/
 ├── data/                              ← 运行数据（自动创建）
 ├── logs/                              ← 日志（自动创建）
 └── deploy/
-    └── vision-agent.service           ← systemd 服务文件
+    └── sentinelmind.service           ← systemd 服务文件
 ```
 
 ---

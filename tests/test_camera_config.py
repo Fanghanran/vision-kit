@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from vision_agent.config.settings import ConfigManager
+from sentinelmind.config.settings import ConfigManager
 
 
 class TestCameraConfig:

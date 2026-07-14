@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from vision_agent.core.camera import CameraConfig, CameraThread, FrameQueue
+from sentinelmind.core.camera import CameraConfig, CameraThread, FrameQueue
 
 
 class FakePipeline:

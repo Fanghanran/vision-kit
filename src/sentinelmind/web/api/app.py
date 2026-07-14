@@ -17,7 +17,7 @@ Web API 模块 — HTTP REST API + WebSocket 实时推送
 
 from __future__ import annotations
 
-from vision_agent.core.types import CameraStatus
+from sentinelmind.core.types import CameraStatus
 
 import hmac
 import logging
@@ -139,7 +139,7 @@ def create_app(
     cors_origins = config.get("cors_origins", ["http://localhost:3000"])
 
     app = FastAPI(
-        title="Vision Agent", version="1.0.0", description="多路视频智能分析框架"
+        title="SentinelMind", version="1.0.0", description="多路视频智能分析框架"
     )
 
     # CORS 中间件
@@ -179,8 +179,8 @@ def create_app(
 
     # ─── 认证基础设施（必须在业务端点之前定义）─────────────────────
 
-    from vision_agent.auth.manager import get_auth_manager
-    from vision_agent.auth.models import PERMISSIONS, Role, UserStatus
+    from sentinelmind.auth.manager import get_auth_manager
+    from sentinelmind.auth.models import PERMISSIONS, Role, UserStatus
 
     auth_mgr = get_auth_manager()
 
@@ -404,7 +404,7 @@ def create_app(
         if not pipeline:
             raise HTTPException(status_code=404, detail="系统未启动")
 
-        from vision_agent.core.camera import CameraConfig
+        from sentinelmind.core.camera import CameraConfig
 
         camera_id = body.get("id", "")
         if not camera_id:
@@ -458,7 +458,7 @@ def create_app(
         if not cam_thread:
             raise HTTPException(status_code=404, detail=f"摄像头 {camera_id} 不存在")
 
-        from vision_agent.core.camera import CameraConfig
+        from sentinelmind.core.camera import CameraConfig
 
         # 先停旧线程
         was_alive = cam_thread.is_alive()
@@ -1641,7 +1641,7 @@ def create_app(
     # ─── 规则管理 API ──────────────────────────────────────────
 
     try:
-        from vision_agent.web.api.rules import create_router as create_rules_router
+        from sentinelmind.web.api.rules import create_router as create_rules_router
 
         rules_router = create_rules_router(auth_dependency=_require_auth)
         if rules_router is not None:
