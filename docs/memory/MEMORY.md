@@ -1,0 +1,7 @@
+- [SentinelMind 项目](vision-agent-project.md) — 第一版完成，287测试全绿，P0~P4全部功能，原名Vision Agent
+- [Commit 用中文](commit-chinese.md) — git commit 描述使用中文
+- [不要自动提交](no-auto-commit.md) — 不要自动 add/commit/push，等用户指示
+- [多标签token失效](ws-multitab-token.md) — BroadcastChannel方案已实现，多标签同步完成
+- [Nexus项目](agent-framework-design.md) — LangChain版通用AI Agent框架，已独立为 d:/nexus/，详细设计书在 d:/nexus/docs/designs/agent-langchain/detailed-design.md
+- [V2部署设计](v2-deployment-design.md) — 第二版运维部署详细设计，分三批：systemd+备份+Docker → HTTPS+RAG → PostgreSQL+端云
+- [文档规范](docs-structure.md) — 文档目录规范，写文档时必须遵守：modules/planning/security/reference/memory
