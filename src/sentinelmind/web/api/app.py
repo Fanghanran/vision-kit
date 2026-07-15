@@ -153,7 +153,7 @@ def create_app(
 
     # ─── 路径白名单中间件 ────────────────────────────────────
 
-    _ALLOWED_PREFIXES = ("/api/", "/ws", "/health", "/static/")
+    _ALLOWED_PREFIXES = ("/api/", "/ws", "/health", "/assets/", "/favicon.ico", "/")
 
     from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -1649,6 +1649,41 @@ def create_app(
             logger.info("rules_api_mounted")
     except Exception as e:
         logger.warning("rules_api_failed error=%s", e)
+
+    # ─── 静态文件服务（前端）──────────────────────────────────
+
+    from pathlib import Path as _Path
+    from fastapi.staticfiles import StaticFiles
+
+    frontend_dist = _Path(__file__).parent.parent.parent.parent / "frontend" / "dist"
+    if frontend_dist.exists():
+        # 静态资源（JS/CSS/图片）
+        app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+        logger.info("frontend_assets_mounted path=%s", frontend_dist / "assets")
+
+        # favicon
+        @app.get("/favicon.ico")
+        async def favicon():
+            fav = frontend_dist / "favicon.ico"
+            if fav.exists():
+                return FileResponse(str(fav))
+            raise HTTPException(status_code=404)
+
+        # index.html
+        @app.get("/")
+        async def serve_index():
+            return FileResponse(str(frontend_dist / "index.html"))
+
+        # SPA 路由回退（仅 Vue Router 的 history 路由）
+        @app.get("/{full_path:path}")
+        async def serve_spa(full_path: str):
+            """前端 SPA 路由回退"""
+            # API/WS/Health 路由已由前面的路由处理，不会走到这里
+            file_path = frontend_dist / full_path
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(str(file_path))
+            # Vue Router 的 history 模式：非文件路径都返回 index.html
+            return FileResponse(str(frontend_dist / "index.html"))
 
     # ─── 广播接口（供 pipeline 调用）──────────────────────────
 

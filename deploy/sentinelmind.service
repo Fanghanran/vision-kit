@@ -1,0 +1,32 @@
+[Unit]
+Description=SentinelMind 多路视频智能分析系统
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sentinelmind
+Group=sentinelmind
+WorkingDirectory=/opt/sentinelmind
+ExecStart=/opt/sentinelmind/venv/bin/python -m sentinelmind --config /opt/sentinelmind/configs
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# 日志（journald）
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sentinelmind
+
+# 环境变量（敏感信息从 .env 读取）
+EnvironmentFile=-/opt/sentinelmind/.env
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/sentinelmind/data /opt/sentinelmind/logs /opt/sentinelmind/configs
+
+[Install]
+WantedBy=multi-user.target

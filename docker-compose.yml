@@ -1,0 +1,49 @@
+# docker-compose.yml — SentinelMind 服务编排
+
+services:
+  # ─── SentinelMind 主服务 ─────────────────────────
+  app:
+    build: .
+    container_name: sentinelmind
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configs:/app/configs
+      - ./data:/app/data
+      - ./models:/app/models
+    environment:
+      - LLM_API_KEY=${LLM_API_KEY}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+    env_file:
+      - path: .env
+        required: false
+    # GPU 直通（取消注释以启用）
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ─── Redis（可选，用 --profile with-redis 启动）────
+  redis:
+    image: redis:7-alpine
+    container_name: sentinelmind-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    profiles:
+      - with-redis
+
+volumes:
+  redis-data:

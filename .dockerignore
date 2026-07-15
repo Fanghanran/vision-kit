@@ -1,0 +1,25 @@
+# .dockerignore — 排除不需要的文件
+
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+/dist
+/build
+node_modules
+data/
+logs/
+*.db
+*.log
+.env
+.env.*
+.vscode
+.idea
+tests/
+docs/
+deploy/
+scripts/
+*.md
+!README.md
